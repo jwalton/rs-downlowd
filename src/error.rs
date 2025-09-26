@@ -4,6 +4,12 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("Invalid URL: {cause}")]
+    InvalidUrl { cause: String },
+
+    #[error("Invalid header: {cause}")]
+    InvalidHeader { cause: String },
+
     #[error("Network error during {during} for {url}: {cause}")]
     Network {
         during: &'static str,

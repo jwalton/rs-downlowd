@@ -1,12 +1,15 @@
+#[doc = include_str!("../README.md")]
 use std::{
     borrow::Cow,
     path::{Path, PathBuf},
     time::SystemTime,
 };
 
+mod client;
 mod error;
 mod file_info;
 mod headers;
+mod into_url;
 mod io_utils;
 mod progress;
 mod utils;
@@ -19,31 +22,32 @@ pub use error::Error;
 pub use progress::Progress;
 use reqwest::Response;
 use tokio::{fs::File, io::AsyncWriteExt};
+use url::Url;
 
 use crate::file_info::FileInfo;
 
-/// A client for downloading files over HTTP.
-pub struct Client {
-    client: reqwest::Client,
-    // TODO: Custom headers.
-}
+pub use client::{Client, ClientBuilder};
+pub use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
+pub use into_url::IntoUrl;
 
 /// Represents a file about to be downloaded.
-pub struct Download<'a> {
+pub struct Download {
     client: reqwest::Client,
-    url: &'a str,
+    url: Url,
+    headers: HeaderMap,
     /// Information we know about the remote file.
     remote_file_info: FileInfo,
     destination: Option<PathBuf>,
     progress: Option<Box<dyn Progress>>,
-    // TODO: Custom headers
     // TODO: Rate limiting
     // TODO: Retry logic
+    err: Option<Error>,
 }
 
-struct DownloadInner<'a> {
+struct DownloadInner {
     client: reqwest::Client,
-    url: &'a str,
+    url: Url,
+    headers: HeaderMap,
     /// Information we know about the remote file.
     remote_file_info: FileInfo,
     progress: Option<Box<dyn Progress>>,
@@ -64,44 +68,57 @@ pub struct DownloadResult {
     pub bytes_downloaded: u64,
 }
 
-impl Client {
-    // TODO: Allow setting the user_agent after the fact.
-    pub fn new(user_agent: String) -> Self {
-        let client = reqwest::Client::builder()
-            .user_agent(&user_agent)
-            .build()
-            .expect("Failed to create HTTP client");
-        Client { client }
-    }
-
-    /// Create a file download.
-    ///
-    /// example:
-    ///
-    /// ```rust
-    /// let client = Client::new("my-agent/1.0".to_string());
-    /// let result = client.download("https://example.com/file.txt")
-    ///    .destination("file.txt")
-    ///    .download()
-    ///    .await?;
-    /// ```
-    ///
-    // TODO: Change this to take an IntoUrl trait?
-    pub fn download<'a>(&self, url: &'a str) -> Download<'a> {
-        Download::new(self.client.clone(), url)
-    }
-}
-
-impl<'a> Download<'a> {
+impl Download {
     /// Create a new download for the given URL.
-    fn new(client: reqwest::Client, url: &'a str) -> Self {
+    fn create(client: reqwest::Client, url: impl IntoUrl) -> Self {
+        let (url, err) = match url.into_url() {
+            Ok(u) => (u, None),
+            Err(e) => (
+                Url::parse("http://invalid/").unwrap(),
+                Some(Error::InvalidUrl {
+                    cause: e.to_string(),
+                }),
+            ),
+        };
+
         Download {
             client,
             url,
             remote_file_info: FileInfo::default(),
             destination: None,
             progress: None,
+            headers: HeaderMap::new(),
+            err,
         }
+    }
+
+    /// Add a custom header for this download.
+    pub fn header<K, V>(mut self, key: K, value: V) -> Self
+    where
+        K: IntoHeaderName,
+        HeaderValue: TryFrom<V>,
+        <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+    {
+        match value.try_into() {
+            Ok(v) => {
+                self.headers.insert(key, v);
+            }
+            Err(e) => {
+                self.err = Some(Error::InvalidHeader {
+                    cause: e.into().to_string(),
+                });
+            }
+        };
+
+        self
+    }
+
+    /// Add multiple headers for this download.
+    pub fn add_headers(mut self, headers: HeaderMap) -> Self {
+        for (key, value) in headers.iter() {
+            self.headers.insert(key, value.clone());
+        }
+        self
     }
 
     /// Set the progress reporter for this download.  The given reporter will
@@ -146,6 +163,10 @@ impl<'a> Download<'a> {
 
     /// This causes the file to actually be downloaded.
     pub async fn download(self) -> Result<DownloadResult, Error> {
+        if let Some(e) = self.err {
+            return Err(e);
+        }
+
         // Work out where we're ultimately going to save the file.
         let destination = self.get_destination().await?;
 
@@ -188,6 +209,7 @@ impl<'a> Download<'a> {
         let inner = DownloadInner {
             client: self.client,
             url: self.url,
+            headers: self.headers,
             remote_file_info,
             progress: self.progress,
             destination,
@@ -218,7 +240,8 @@ impl<'a> Download<'a> {
             // Need to get the filename from the server.
             let filename = self
                 .client
-                .head(self.url)
+                .head(self.url.clone())
+                .headers(self.headers.clone())
                 .send()
                 .await
                 .ok()
@@ -227,7 +250,7 @@ impl<'a> Download<'a> {
                         headers::parse_content_disposition(&head)
                             .map(|s| Cow::Owned(s.into_owned()))
                     } else {
-                        self.url.split('/').next_back().map(Cow::Borrowed)
+                        self.url.path().split('/').next_back().map(Cow::Borrowed)
                     }
                 })
                 .unwrap_or(Cow::Borrowed("file"));
@@ -256,7 +279,7 @@ impl<'a> Download<'a> {
     }
 }
 
-impl<'a> DownloadInner<'a> {
+impl DownloadInner {
     async fn download(mut self) -> Result<DownloadResult, Error> {
         // TODO: Set limits on how many times we retry.
         let mut done = false;
@@ -424,12 +447,14 @@ impl<'a> DownloadInner<'a> {
     /// Send a GET request for the file.
     async fn get_file<'v>(
         &self,
-        headers: Option<Vec<(&str, Cow<'v, str>)>>,
+        range_headers: Option<Vec<(&str, Cow<'v, str>)>>,
     ) -> Result<Response, Error> {
-        // TODO: Allow adding custom headers to the request.
-        let mut request = self.client.get(self.url);
-        if let Some(headers) = headers {
-            for (name, value) in headers {
+        let mut request = self
+            .client
+            .get(self.url.clone())
+            .headers(self.headers.clone());
+        if let Some(range_headers) = range_headers {
+            for (name, value) in range_headers {
                 request = request.header(name, value.into_owned());
             }
         };

@@ -16,7 +16,7 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
-    let client = Client::new("test-agent/1.0".to_string());
+    let client = Client::new();
     let result = client
         .download(&url)
         .destination(&destination)
@@ -45,7 +45,7 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
     tokio::fs::write(&part_file, &MESSAGE[..5]).await?;
     let (last_modified, _) = utils::head_url(&url).await;
 
-    let client = Client::new("test-agent/1.0".to_string());
+    let client = Client::new();
     let result = client
         .download(&url)
         .last_modified(last_modified.unwrap().into())
@@ -87,7 +87,7 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
     )
     .await?;
 
-    let client = Client::new("test-agent/1.0".to_string());
+    let client = Client::new();
     let result = client
         .download(&url)
         .destination(&destination)
@@ -125,7 +125,7 @@ async fn should_not_continue_a_modified_file_from_sidecar() -> Result<(), Box<dy
     let sidecar_file = dir.path().join("my-file.txt.downloadinfo");
     tokio::fs::write(&sidecar_file, "Last-Modified: 2020-01-01T12:00:00Z\nEtag: wrong\n").await?;
 
-    let client = Client::new("test-agent/1.0".to_string());
+    let client = Client::new();
     let result = client
         .download(&url)
         .destination(&destination)
@@ -161,7 +161,7 @@ async fn should_not_continue_a_file_with_wrong_last_modified()
     let part_file = dir.path().join("my-file.txt.part");
     tokio::fs::write(&part_file, &MESSAGE[..5]).await?;
 
-    let client = Client::new("test-agent/1.0".to_string());
+    let client = Client::new();
     let result = client
         .download(&url)
         .destination(&destination)
@@ -192,7 +192,7 @@ async fn should_prefer_etag_over_last_modified()
     let part_file = dir.path().join("my-file.txt.part");
     tokio::fs::write(&part_file, &MESSAGE[..5]).await?;
 
-    let client = Client::new("test-agent/1.0".to_string());
+    let client = Client::new();
     let result = client
         .download(&url)
         .destination(&destination)
