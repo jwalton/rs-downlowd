@@ -27,9 +27,6 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let result = client
         .download(url)
         .destination(destination)
-        .progress(Box::new(|bytes_downloaded, total_bytes| {
-            println!("Downloaded {} of {} bytes", bytes_downloaded, total_bytes);
-        }))
         .download()
         .await?;
 
@@ -74,9 +71,6 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
         .download(&url)
         .destination(destination)
         .etag("test-etag")
-        .progress(Box::new(|bytes_downloaded, total_bytes| {
-            println!("Downloaded {} of {} bytes", bytes_downloaded, total_bytes);
-        }))
         .download()
         .await?;
 
@@ -103,7 +97,7 @@ async fn should_add_custom_headers() -> Result<(), Box<dyn std::error::Error>> {
             request::headers(contains(("x-my-header", "potato"))),
             request::headers(contains(("x-my-other", "canon"))),
         ])
-            .respond_with(responders::status_code(200).body(message)),
+        .respond_with(responders::status_code(200).body(message)),
     );
 
     let client = ClientBuilder::new()
@@ -115,9 +109,6 @@ async fn should_add_custom_headers() -> Result<(), Box<dyn std::error::Error>> {
         .download(url)
         .header("x-my-other", "canon")
         .destination(destination)
-        .progress(Box::new(|bytes_downloaded, total_bytes| {
-            println!("Downloaded {} of {} bytes", bytes_downloaded, total_bytes);
-        }))
         .download()
         .await?;
 

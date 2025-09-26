@@ -20,8 +20,8 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(Box::new(|bytes_downloaded, total_bytes| {
-            println!("Downloaded {} of {} bytes", bytes_downloaded, total_bytes);
+        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
+            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
         }))
         .download()
         .await?;
@@ -50,8 +50,8 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
         .download(&url)
         .last_modified(last_modified.unwrap().into())
         .destination(&destination)
-        .progress(Box::new(|bytes_downloaded, total_bytes| {
-            println!("Downloaded {} of {} bytes", bytes_downloaded, total_bytes);
+        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
+            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
         }))
         .download()
         .await?;
@@ -91,8 +91,8 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(Box::new(|bytes_downloaded, total_bytes| {
-            println!("Downloaded {} of {} bytes", bytes_downloaded, total_bytes);
+        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
+            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
         }))
         .download()
         .await?;
@@ -129,8 +129,8 @@ async fn should_not_continue_a_modified_file_from_sidecar() -> Result<(), Box<dy
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(Box::new(|bytes_downloaded, total_bytes| {
-            println!("Downloaded {} of {} bytes", bytes_downloaded, total_bytes);
+        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
+            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
         }))
         .download()
         .await?;
@@ -166,8 +166,8 @@ async fn should_not_continue_a_file_with_wrong_last_modified()
         .download(&url)
         .destination(&destination)
         .last_modified(SystemTime::UNIX_EPOCH) // definitely wrong
-        .progress(Box::new(|bytes_downloaded, total_bytes| {
-            println!("Downloaded {} of {} bytes", bytes_downloaded, total_bytes);
+        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
+            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
         }))
         .download()
         .await?;
@@ -198,8 +198,8 @@ async fn should_prefer_etag_over_last_modified()
         .destination(&destination)
         .etag(etag.unwrap())
         .last_modified(SystemTime::UNIX_EPOCH) // definitely wrong
-        .progress(Box::new(|bytes_downloaded, total_bytes| {
-            println!("Downloaded {} of {} bytes", bytes_downloaded, total_bytes);
+        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
+            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
         }))
         .download()
         .await?;

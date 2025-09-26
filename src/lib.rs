@@ -19,7 +19,7 @@ mod tests;
 
 use chrono::{DateTime, Utc};
 pub use error::Error;
-pub use progress::Progress;
+pub use progress::*;
 use reqwest::Response;
 use tokio::{fs::File, io::AsyncWriteExt};
 use url::Url;
@@ -40,7 +40,6 @@ pub struct Download {
     destination: Option<PathBuf>,
     progress: Option<Box<dyn Progress>>,
     // TODO: Rate limiting
-    // TODO: Retry logic
     err: Option<Error>,
 }
 
@@ -174,8 +173,6 @@ impl Download {
         // it's the correct length.
         let destination_metadata = tokio::fs::metadata(&destination).await.ok();
         if let Some(metadata) = destination_metadata {
-            // TODO: Do we also want to check the last modified time against the file's mtime?
-            // How reliable is that on non-UNIX filesystems?
             if let Some(remote_length) = self.remote_file_info.length {
                 if metadata.len() == remote_length {
                     // File already exists and is the correct length - nothing to do.
@@ -488,15 +485,19 @@ impl DownloadInner {
         }
         let initial_size = self.local_file_size;
 
-        // FIXME: Probably want to send `None` to the progress callback if we don't know the total size.
-        let total_bytes = response
-            .content_length()
-            .map(|v| v + initial_size)
-            .unwrap_or(0);
+        let mut progress_data = ProgressData {
+            url: &self.url,
+            destination: &self.destination,
+            bytes_downloaded: initial_size,
+            total_bytes: response
+                .content_length()
+                .map(|v| v + initial_size)
+                .or(self.remote_file_info.length),
+        };
 
         // Initial call into the progress callback.
         if let Some(progress) = self.progress.as_mut() {
-            progress.progress(initial_size, total_bytes);
+            progress.progress(&progress_data);
         }
 
         loop {
@@ -525,7 +526,8 @@ impl DownloadInner {
             }
 
             if let Some(progress) = &mut self.progress {
-                progress.progress(initial_size + bytes_downloaded, total_bytes);
+                progress_data.bytes_downloaded = initial_size + bytes_downloaded;
+                progress.progress(&progress_data);
             }
         }
 
