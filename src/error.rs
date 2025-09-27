@@ -17,6 +17,9 @@ pub enum Error {
         cause: reqwest::Error,
     },
 
+    #[error("Bad redirect: {reason}")]
+    BadRedirect { reason: &'static str },
+
     #[error("Error {action} for {path}: {cause}")]
     Write {
         action: &'static str,
@@ -40,7 +43,10 @@ impl Error {
                 // 400 errors are not retryable.
                 *status < 400 || *status >= 500
             }
-            Error::InvalidUrl { .. } | Error::InvalidHeader { .. } | Error::Write { .. } => false,
+            Error::InvalidUrl { .. }
+            | Error::InvalidHeader { .. }
+            | Error::Write { .. }
+            | Error::BadRedirect { .. } => false,
         }
     }
 }

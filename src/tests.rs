@@ -39,6 +39,71 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
+async fn should_follow_redirects() -> Result<(), Box<dyn std::error::Error>> {
+    let message = "hello world";
+
+    let dir = TempDir::new()?;
+
+    // Configure the server to expect a single GET /foo request and respond
+    // with a 200 status code.
+    let server = Server::run();
+    server.expect(
+        Expectation::matching(request::method_path("GET", "/file.txt"))
+            .respond_with(responders::status_code(301).append_header("Location", "/file2.txt")),
+    );
+    server.expect(
+        Expectation::matching(request::method_path("GET", "/file2.txt"))
+            .respond_with(responders::status_code(200).body(message)),
+    );
+
+    // TODO: Verify output of progress handler.
+    let client = Client::new();
+    let url = server.url("/file.txt");
+    let destination = dir.path().join("my-file.txt");
+    let result = client
+        .download(url)
+        .destination(destination)
+        .download()
+        .await?;
+
+    assert_eq!(result.bytes_downloaded, 11);
+
+    let file_contents = tokio::fs::read_to_string(&result.path).await?;
+    assert_eq!(file_contents, message);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn should_not_follow_redirect_loop() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+
+    // Configure the server to expect a single GET /foo request and respond
+    // with a 200 status code.
+    let server = Server::run();
+    server.expect(
+        Expectation::matching(request::method_path("GET", "/file.txt"))
+            .times(1..)
+            .respond_with(responders::status_code(301).append_header("Location", "/file.txt")),
+    );
+
+    let client = Client::new();
+    let url = server.url("/file.txt");
+    let destination = dir.path().join("my-file.txt");
+    let result = client
+        .download(url)
+        .max_retries(100)
+        .destination(destination)
+        .download()
+        .await;
+
+    let err = result.unwrap_err();
+    assert!(matches!(err, Error::BadRedirect { .. }));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let message = "hello world";
 

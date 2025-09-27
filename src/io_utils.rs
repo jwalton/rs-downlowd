@@ -29,6 +29,9 @@ pub async fn finalize_download(
     Ok(())
 }
 
+/// Finalize a download by renaming the part file to the destination file,
+/// deleting the sidecare file, and updating the modified time of the destination
+/// file.
 fn finalize_download_sync(
     sidecar_file: &Path,
     part_file: &Path,

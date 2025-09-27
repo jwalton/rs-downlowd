@@ -1,38 +1,11 @@
 use std::time::SystemTime;
 
-use best_file_downloader::Client;
+use best_file_downloader::{Client, ProgressData};
 use temp_dir::TempDir;
 
-use crate::integration::utils;
-
-// The URL of the local nginx server used for testing.
-const SERVER_URL: &str = "http://localhost:8089";
+use crate::integration::{constants::SERVER_URL, utils};
 
 const MESSAGE: &str = "hello world";
-
-#[tokio::test]
-async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
-    let dir = TempDir::new()?;
-    let destination = dir.path().join("my-file.txt");
-
-    let client = Client::new();
-    let result = client
-        .download(&url)
-        .destination(&destination)
-        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
-            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
-        }))
-        .download()
-        .await?;
-
-    assert_eq!(&result.path, &destination);
-    let file_contents = tokio::fs::read_to_string(&result.path).await?;
-    assert_eq!(file_contents, MESSAGE);
-    assert_eq!(result.bytes_downloaded, MESSAGE.len() as u64);
-
-    Ok(())
-}
 
 #[tokio::test]
 async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
@@ -50,9 +23,13 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
         .download(&url)
         .last_modified(last_modified.unwrap().into())
         .destination(&destination)
-        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
-            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
-        }))
+        .progress(|data: &ProgressData| {
+            println!(
+                "Downloaded {} of {} bytes",
+                data.bytes(),
+                data.total_bytes().unwrap()
+            );
+        })
         .download()
         .await?;
 
@@ -91,9 +68,13 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
-            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
-        }))
+        .progress(|data: &ProgressData| {
+            println!(
+                "Downloaded {} of {} bytes",
+                data.bytes(),
+                data.total_bytes().unwrap()
+            );
+        })
         .download()
         .await?;
 
@@ -123,15 +104,23 @@ async fn should_not_continue_a_modified_file_from_sidecar() -> Result<(), Box<dy
     let part_file = dir.path().join("my-file.txt.part");
     tokio::fs::write(&part_file, "abcde").await?;
     let sidecar_file = dir.path().join("my-file.txt.downloadinfo");
-    tokio::fs::write(&sidecar_file, "Last-Modified: 2020-01-01T12:00:00Z\nEtag: wrong\n").await?;
+    tokio::fs::write(
+        &sidecar_file,
+        "Last-Modified: 2020-01-01T12:00:00Z\nEtag: wrong\n",
+    )
+    .await?;
 
     let client = Client::new();
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
-            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
-        }))
+        .progress(|data: &ProgressData| {
+            println!(
+                "Downloaded {} of {} bytes",
+                data.bytes(),
+                data.total_bytes().unwrap()
+            );
+        })
         .download()
         .await?;
 
@@ -166,9 +155,13 @@ async fn should_not_continue_a_file_with_wrong_last_modified()
         .download(&url)
         .destination(&destination)
         .last_modified(SystemTime::UNIX_EPOCH) // definitely wrong
-        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
-            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
-        }))
+        .progress(|data: &ProgressData| {
+            println!(
+                "Downloaded {} of {} bytes",
+                data.bytes(),
+                data.total_bytes().unwrap()
+            );
+        })
         .download()
         .await?;
 
@@ -181,8 +174,7 @@ async fn should_not_continue_a_file_with_wrong_last_modified()
 }
 
 #[tokio::test]
-async fn should_prefer_etag_over_last_modified()
--> Result<(), Box<dyn std::error::Error>> {
+async fn should_prefer_etag_over_last_modified() -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
@@ -198,9 +190,13 @@ async fn should_prefer_etag_over_last_modified()
         .destination(&destination)
         .etag(etag.unwrap())
         .last_modified(SystemTime::UNIX_EPOCH) // definitely wrong
-        .progress(Box::new(|bytes_downloaded: u64, total_bytes: Option<u64>| {
-            println!("Downloaded {bytes_downloaded} of {} bytes", total_bytes.unwrap());
-        }))
+        .progress(|data: &ProgressData| {
+            println!(
+                "Downloaded {} of {} bytes",
+                data.bytes(),
+                data.total_bytes().unwrap()
+            );
+        })
         .download()
         .await?;
 
@@ -212,4 +208,3 @@ async fn should_prefer_etag_over_last_modified()
 
     Ok(())
 }
-
