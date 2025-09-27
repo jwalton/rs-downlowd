@@ -279,10 +279,13 @@ impl Download {
 impl DownloadInner {
     async fn download(mut self) -> Result<DownloadResult, Error> {
         // TODO: Set limits on how many times we retry.
+        let mut tries = 0;
+
         let mut done = false;
         let mut bytes_downloaded = 0;
         while !done {
-            let (n, result) = self.try_download().await;
+            tries += 1;
+            let (n, result) = self.try_download(tries).await;
             self.local_file_size += n;
             bytes_downloaded += n;
 
@@ -328,7 +331,7 @@ impl DownloadInner {
 
     /// This is the "inner loop" of the download. Try to download the file, and return
     /// an error if it fails for any reason.  The caller can then decide whether to retry or not.
-    async fn try_download(&mut self) -> (u64, Result<(), Error>) {
+    async fn try_download(&mut self, tries: u64) -> (u64, Result<(), Error>) {
         // Check to see if our part file already exists, and if so, whether we can resume the download.
         let range_headers = resume_download_headers(
             self.local_file_size,
@@ -360,7 +363,7 @@ impl DownloadInner {
         }
 
         // Copy data from the response to the .part file.
-        let (bytes_written, result) = self.copy_response_to_file(response, append).await;
+        let (bytes_written, result) = self.copy_response_to_file(tries, response, append).await;
 
         // Copy the etag and last modified time from the response.
         if bytes_written > 0 {
@@ -471,6 +474,7 @@ impl DownloadInner {
     /// Returns the total number of bytes written to the file, whether or not this succeeds.
     async fn copy_response_to_file(
         &mut self,
+        tries: u64,
         mut response: Response,
         append: bool,
     ) -> (u64, Result<(), Error>) {
@@ -488,6 +492,7 @@ impl DownloadInner {
         let mut progress_data = ProgressData {
             url: &self.url,
             destination: &self.destination,
+            tries,
             bytes_downloaded: initial_size,
             total_bytes: response
                 .content_length()

@@ -7,7 +7,11 @@ use url::Url;
 pub struct ProgressData<'a> {
     pub url: &'a Url,
     pub destination: &'a Path,
+    /// How many tries have we made so far to download this file?
+    pub tries: u64,
+    /// The total number of bytes downloaded so far.
     pub bytes_downloaded: u64,
+    /// The total number of bytes expected, if known.
     pub total_bytes: Option<u64>,
 }
 
