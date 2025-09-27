@@ -34,6 +34,32 @@ pub enum Error {
 impl Error {
     /// Return true if this is an error that can be retried.
     pub(crate) fn can_retry(&self) -> bool {
-        matches!(self, Error::Network { .. } | Error::FileChanged { .. })
+        match self {
+            Error::Network { .. } | Error::FileChanged { .. } => true,
+            Error::UnexpectedStatus(status) => {
+                // 400 errors are not retryable.
+                *status < 400 || *status >= 500
+            }
+            Error::InvalidUrl { .. } | Error::InvalidHeader { .. } | Error::Write { .. } => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Error;
+
+    #[test]
+    fn test_can_retry() {
+        assert!(
+            Error::FileChanged {
+                description: "etag changed"
+            }
+            .can_retry()
+        );
+
+        assert!(Error::UnexpectedStatus(500).can_retry());
+
+        assert!(!Error::UnexpectedStatus(404).can_retry());
     }
 }
