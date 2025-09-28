@@ -318,8 +318,11 @@ impl DownloadInner {
                 }
                 Err(e) => {
                     if matches!(e, Error::FileChanged { .. }) {
+                        // The file has changed on the server - we need to start again.
                         self.truncate().await?;
-                        self.update_remote_file_info(None, None, None).await;
+                        self.remote_file_info
+                            .update(&self.sidecar_filename, None, None, None)
+                            .await;
                     } else if !e.can_retry() {
                         // TODO: Make the wait time configurable.  Use some kind of backoff.
                         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -375,8 +378,9 @@ impl DownloadInner {
             // header we sent, but some servers are not well behaved.
             self.validate_file_unchanged(last_modified, &etag, content_length)?;
         } else {
-            // If we're not appending, then update our info about the remote file.
-            self.update_remote_file_info(content_length, last_modified, etag)
+            // If we're not resuming, then update our info about the remote file.
+            self.remote_file_info
+                .update(&self.sidecar_filename, content_length, last_modified, etag)
                 .await;
         }
 
@@ -425,36 +429,6 @@ impl DownloadInner {
         }
 
         Ok(())
-    }
-
-    /// Update the remote file info, and write out the sidecar file if anything has changed.
-    async fn update_remote_file_info(
-        &mut self,
-        content_length: Option<u64>,
-        last_modified: Option<DateTime<Utc>>,
-        etag: Option<String>,
-    ) {
-        let info = &mut self.remote_file_info;
-
-        let changed =
-            info.length != content_length || info.modified != last_modified || info.etag != etag;
-
-        if changed {
-            info.length = content_length;
-            info.modified = last_modified;
-            info.etag = etag;
-
-            if info.length.is_some() || info.modified.is_some() || info.etag.is_some() {
-                // TODO: Don't write the sidecar file if we were provided the etag or last modified dates
-                // by the user?
-                // Write out the sidecar file with info about the file.
-                let contents = self.remote_file_info.serialize();
-                let _ = tokio::fs::write(&self.sidecar_filename, contents).await;
-            } else {
-                // No info about the file - delete any existing sidecar file.
-                let _ = tokio::fs::remove_file(&self.sidecar_filename).await;
-            }
-        }
     }
 
     /// Work out the range headers to use to resume the download.

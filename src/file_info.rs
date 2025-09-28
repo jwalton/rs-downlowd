@@ -1,4 +1,7 @@
+use std::path::Path;
+
 use chrono::{DateTime, Utc};
+use tokio::fs;
 
 use crate::Error;
 
@@ -66,6 +69,31 @@ impl FileInfo {
         }
 
         Ok(())
+    }
+
+    /// Update the file info if anything has changed, and persist to disk.
+    pub async fn update(
+        &mut self,
+        sidecar_file: &Path,
+        content_length: Option<u64>,
+        last_modified: Option<DateTime<Utc>>,
+        etag: Option<String>,
+    ) {
+        let changed =
+            self.length != content_length || self.modified != last_modified || self.etag != etag;
+
+        if changed {
+            self.length = content_length;
+            self.modified = last_modified;
+            self.etag = etag;
+
+            if self.length.is_some() || self.modified.is_some() || self.etag.is_some() {
+                let serialized = self.serialize();
+                let _ = fs::write(sidecar_file, serialized).await;
+            } else {
+                let _ = fs::remove_file(sidecar_file).await;
+            }
+        }
     }
 }
 
