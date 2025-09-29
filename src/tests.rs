@@ -56,13 +56,18 @@ async fn should_follow_redirects() -> Result<(), Box<dyn std::error::Error>> {
             .respond_with(responders::status_code(200).body(message)),
     );
 
-    // TODO: Verify output of progress handler.
     let client = Client::new();
     let url = server.url("/file.txt");
+    let redirect_url = server.url("/file2.txt");
     let destination = dir.path().join("my-file.txt");
     let result = client
-        .download(url)
+        .download(url.clone())
         .destination(destination)
+        .progress(move |data: &ProgressData| {
+            // Verify the progress handler calims to have followed the redirect.
+            assert_eq!(data.original_url().to_string(), url.to_string());
+            assert_eq!(data.url().to_string(), redirect_url.to_string());
+        })
         .download()
         .await?;
 
@@ -173,6 +178,41 @@ async fn should_add_custom_headers() -> Result<(), Box<dyn std::error::Error>> {
     let result = client
         .download(url)
         .header("x-my-other", "canon")
+        .destination(destination)
+        .download()
+        .await?;
+
+    assert_eq!(result.bytes_downloaded, 11);
+
+    let file_contents = tokio::fs::read_to_string(&result.path).await?;
+    assert_eq!(file_contents, message);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn should_retry_a_download() -> Result<(), Box<dyn std::error::Error>> {
+    let message = "hello world";
+
+    let dir = TempDir::new()?;
+
+    // Configure the server to expect a single GET /foo request and respond
+    // with a 200 status code.
+    let server = Server::run();
+    server.expect(
+        Expectation::matching(request::method_path("GET", "/file.txt"))
+            .times(2)
+            .respond_with(responders::cycle![
+                responders::status_code(500).body("boom"),
+                responders::status_code(200).body(message)
+            ]),
+    );
+
+    let client = Client::new();
+    let url = server.url("/file.txt");
+    let destination = dir.path().join("my-file.txt");
+    let result = client
+        .download(url)
         .destination(destination)
         .download()
         .await?;

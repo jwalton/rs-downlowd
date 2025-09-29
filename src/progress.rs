@@ -1,17 +1,35 @@
 // FIXME: Add a "progress struct" here.
 
-use std::path::Path;
+use std::{path::{Path, PathBuf}, time::Duration};
 
 use url::Url;
 
-pub struct ProgressData<'a> {
+use crate::Error;
+
+pub enum ProgressEvent {
+    /// We've made some progress downloading the file.
+    BytesDownloaded,
+    /// We've encountered an error, and will retry.
+    // TODO: When will we retry?
+    Err {
+        err: Error,
+        time_until_retry: Duration,
+    },
+    /// We're done downloading the file.  The file has been renamed to its final
+    /// destination.
+    Done,
+}
+
+pub struct ProgressData {
+    /// The type of event we are reporting.
+    pub(crate) event: ProgressEvent,
     /// The original URL we are downloading from.
-    pub(crate) original_url: &'a Url,
+    pub(crate) original_url: Url,
     /// The URL we are downloading from.  Note that if we followed a redirect,
     /// this may be different from the original URL.
-    pub(crate) url: &'a Url,
+    pub(crate) updated_url: Option<Url>,
     /// The final path we are downloading to.
-    pub(crate) destination: &'a Path,
+    pub(crate) destination: PathBuf,
     /// The total number of tries so far to download this file.
     pub(crate) tries: u64,
     /// The actual number of bytes actually transfered so far.
@@ -42,22 +60,27 @@ impl Progress for Box<dyn Progress> {
     }
 }
 
-impl ProgressData<'_> {
+impl ProgressData {
+    /// Returns the type of event we are reporting.
+    pub fn event(&self) -> &ProgressEvent {
+        &self.event
+    }
+
     /// Returns the original URL we are downloading from.
     pub fn original_url(&self) -> &Url {
-        self.original_url
+        &self.original_url
     }
 
     /// Returns the URL we are downloading from.  Note that if we followed a
     /// redirect, this may be different from the original URL.  If you are
     /// looking for the URL that was supplied by the user, see `original_url()`.
     pub fn url(&self) -> &Url {
-        self.url
+        self.updated_url.as_ref().unwrap_or(&self.original_url)
     }
 
     /// Returns the final path we are downloading to.
     pub fn destination(&self) -> &Path {
-        self.destination
+        &self.destination
     }
 
     /// Returns the total number of tries so far to download this file.  Note that
