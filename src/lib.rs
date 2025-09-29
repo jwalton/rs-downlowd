@@ -42,23 +42,37 @@ pub enum Status {
 
 /// Represents a file about to be downloaded.
 pub struct Download {
+    /// The client to use to download the file.
     client: reqwest::Client,
+    /// The URL we want to download from.
     url: Url,
+    /// If we are redirected, this is the URL we were redirected to.
     updated_url: Option<Url>,
+    /// Headers to include in the request.
     headers: HeaderMap,
     /// Information we've been given about the remote file.
     user_provided_remote_file_info: FileInfo,
     /// The file size of the remote file, if we work it out before downloading.
+    /// This will only get filled in if we need to do a HEAD request to work out
+    /// the filename.
     remote_file_length: Option<u64>,
+    /// The configured destination for the file, if any.  This could be a directory
+    /// or an actual file.
     destination: Option<PathBuf>,
+    /// The maximum number of times we will consecutively retry without making progress.
     max_retries: u64,
+    /// The callback to call to report progress.
     progress: Option<Box<dyn Progress>>,
-    // TODO: Rate limiting
+    /// If there are any errors while configuring the download, we store them here,
+    /// so we can return them when we actually try to start the download.
     err: Option<Error>,
+    // TODO: Rate limiting
 }
 
 struct DownloadInner {
+    /// The client to use to download the file.
     client: reqwest::Client,
+    /// Headers to include in the request.
     headers: HeaderMap,
     /// Information we know about the remote file, either from the user, from
     /// the sidecar file, or if we're fetching the file from scratch, from the server.
