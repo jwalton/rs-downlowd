@@ -257,8 +257,8 @@ impl Download {
         let (part_file, local_file_size) =
             utils::file::open_file_for_writing_async(&part_filename).await?;
 
-        let progress_data = ProgressData {
-            event: ProgressEvent::BytesDownloaded,
+        let progress_data = Handle {
+            event: Event::BytesDownloaded,
             original_url: self.url,
             updated_url: self.updated_url,
             destination,
@@ -371,7 +371,7 @@ impl Download {
 }
 
 impl DownloadInner {
-    async fn download(mut self, mut progress_data: ProgressData) -> Result<DownloadResult, Error> {
+    async fn download(mut self, mut progress_data: Handle) -> Result<DownloadResult, Error> {
         let mut retries = 0;
 
         let mut done = false;
@@ -393,7 +393,7 @@ impl DownloadInner {
                             .await;
                         notify(
                             &mut self.progress,
-                            ProgressEvent::Err {
+                            Event::Err {
                                 err: e,
                                 time_until_retry: Duration::from_secs(0),
                             },
@@ -415,7 +415,7 @@ impl DownloadInner {
                         let duration = Duration::from_secs(1);
                         notify(
                             &mut self.progress,
-                            ProgressEvent::Err {
+                            Event::Err {
                                 err: e,
                                 time_until_retry: duration,
                             },
@@ -440,7 +440,7 @@ impl DownloadInner {
         )
         .await?;
 
-        notify(&mut self.progress, ProgressEvent::Done, &mut progress_data)?;
+        notify(&mut self.progress, Event::Done, &mut progress_data)?;
 
         Ok(DownloadResult {
             status: Status::Downloaded,
@@ -452,7 +452,7 @@ impl DownloadInner {
 
     /// This is the "inner loop" of the download. Try to download the file, and return
     /// an error if it fails for any reason.  The caller can then decide whether to retry or not.
-    async fn try_download(&mut self, progress_data: &mut ProgressData) -> Result<(), Error> {
+    async fn try_download(&mut self, progress_data: &mut Handle) -> Result<(), Error> {
         // Make our GET request.
         let response = self.get_file(progress_data).await?;
 
@@ -547,7 +547,7 @@ impl DownloadInner {
     }
 
     /// Send a GET request for the file.
-    async fn get_file(&mut self, progress_data: &mut ProgressData) -> Result<Response, Error> {
+    async fn get_file(&mut self, progress_data: &mut Handle) -> Result<Response, Error> {
         let mut headers = self.headers.clone();
         self.add_resume_download_headers(&mut headers);
         let url = progress_data.url();
@@ -568,7 +568,7 @@ impl DownloadInner {
     /// Returns the total number of bytes written to the file, whether or not this succeeds.
     async fn copy_response_to_file(
         &mut self,
-        progress_data: &mut ProgressData,
+        progress_data: &mut Handle,
         mut response: Response,
         append: bool,
     ) -> Result<u64, Error> {
@@ -587,7 +587,7 @@ impl DownloadInner {
         // Initial call into the progress callback.
         notify(
             &mut self.progress,
-            ProgressEvent::BytesDownloaded,
+            Event::BytesDownloaded,
             progress_data,
         )?;
 
@@ -618,7 +618,7 @@ impl DownloadInner {
             progress_data.bytes = self.local_file_size;
             notify(
                 &mut self.progress,
-                ProgressEvent::BytesDownloaded,
+                Event::BytesDownloaded,
                 progress_data,
             )?;
         }
@@ -687,10 +687,10 @@ async fn request(
 
 fn notify(
     progress: &mut Option<Box<dyn Progress>>,
-    event: ProgressEvent,
-    progress_data: &mut ProgressData,
+    event: Event,
+    progress_data: &mut Handle,
 ) -> Result<(), Error> {
-    let done = matches!(event, ProgressEvent::Done);
+    let done = matches!(event, Event::Done);
 
     progress_data.event = event;
     if let Some(progress) = progress.as_mut() {

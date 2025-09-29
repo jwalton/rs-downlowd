@@ -1,7 +1,6 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use chrono::{DateTime, Utc};
-use tokio::fs;
 
 use crate::Error;
 
@@ -79,14 +78,19 @@ impl FileInfo {
         last_modified: Option<DateTime<Utc>>,
         etag: Option<String>,
     ) {
-        match self.update_inner(content_length, last_modified, etag) {
+        let serialized = self.update_inner(content_length, last_modified, etag);
+        let sidecar_file = sidecar_file.to_owned();
+
+        tokio::task::spawn_blocking(move || match serialized {
             Some(serialized) => {
-                let _ = fs::write(sidecar_file, serialized).await;
+                let _ = fs::write(sidecar_file, serialized);
             }
             None => {
-                let _ = fs::remove_file(sidecar_file).await;
+                let _ = fs::remove_file(sidecar_file);
             }
-        }
+        })
+        .await
+        .unwrap();
     }
 
     pub fn update_inner(

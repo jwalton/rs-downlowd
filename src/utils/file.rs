@@ -4,10 +4,7 @@
 //! written using sync code, and then these get wrapped in blocking tasks when
 //! used in async contexts.
 
-use std::{
-    io::Seek,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use tokio::io::AsyncSeekExt;
 
