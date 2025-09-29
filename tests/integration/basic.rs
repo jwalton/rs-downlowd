@@ -3,7 +3,7 @@ use std::sync::{Arc, atomic::AtomicU64};
 use best_file_downloader::{Client, ProgressData};
 use temp_dir::TempDir;
 
-use crate::integration::constants::SERVER_URL;
+use crate::integration::{constants::SERVER_URL, utils};
 
 const MESSAGE: &str = "hello world";
 
@@ -17,7 +17,7 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(|data: &ProgressData| {
+        .progress(|data: &mut ProgressData| {
             println!(
                 "Downloaded {} of {} bytes",
                 data.bytes(),
@@ -47,7 +47,7 @@ async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::err
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(|data: &ProgressData| {
+        .progress(|data: &mut ProgressData| {
             println!(
                 "Downloaded {} of {} bytes",
                 data.bytes(),
@@ -103,7 +103,7 @@ async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
         client
             .download(&url)
             .destination(&destination)
-            .progress(move |_: &ProgressData| {
+            .progress(move |_: &mut ProgressData| {
                 progress_event_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             })
             .download()
@@ -119,6 +119,47 @@ async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
         progress_event_count.load(std::sync::atomic::Ordering::SeqCst),
         0
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>> {
+    let url = format!("{SERVER_URL}{}", utils::big_file_url());
+    let dir = TempDir::new()?;
+    let destination = dir.path().join("my-file.bin");
+    let part_file = dir.path().join("my-file.bin.part");
+
+    let client = Client::new();
+    let result = client
+        .download(&url)
+        .destination(&destination)
+        .progress(|data: &mut ProgressData| {
+            if data.bytes() > 1_000_000 {
+                println!("Cancelling download after {} bytes", data.bytes());
+                data.cancel();
+            }
+        })
+        .download()
+        .await.unwrap_err();
+
+    println!("Error: {result} for {url}");
+    assert!(matches!(result, best_file_downloader::Error::Cancelled));
+    let file_size = tokio::fs::metadata(&part_file).await?.len();
+    assert!(file_size > 1_000_000);
+    assert!(file_size < 10 * 1024 * 1024);
+
+    // Continue the download.
+    let result = client
+        .download(&url)
+        .destination(&destination)
+        .download()
+        .await?;
+
+    assert_eq!(result.status, best_file_downloader::Status::Downloaded);
+    assert_eq!(&result.path, &destination);
+    let file_size = tokio::fs::metadata(&destination).await?.len();
+    assert_eq!(file_size, 10 * 1024 * 1024);
 
     Ok(())
 }

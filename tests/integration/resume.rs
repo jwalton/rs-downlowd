@@ -23,7 +23,7 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
         .download(&url)
         .last_modified(last_modified.unwrap().into())
         .destination(&destination)
-        .progress(|data: &ProgressData| {
+        .progress(|data: &mut ProgressData| {
             println!(
                 "Downloaded {} of {} bytes",
                 data.bytes(),
@@ -68,7 +68,7 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(|data: &ProgressData| {
+        .progress(|data: &mut ProgressData| {
             println!(
                 "Downloaded {} of {} bytes",
                 data.bytes(),
@@ -114,7 +114,7 @@ async fn should_not_continue_a_modified_file_from_sidecar() -> Result<(), Box<dy
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(|data: &ProgressData| {
+        .progress(|data: &mut ProgressData| {
             println!(
                 "Downloaded {} of {} bytes",
                 data.bytes(),
@@ -155,7 +155,7 @@ async fn should_not_continue_a_file_with_wrong_last_modified()
         .download(&url)
         .destination(&destination)
         .last_modified(SystemTime::UNIX_EPOCH) // definitely wrong
-        .progress(|data: &ProgressData| {
+        .progress(|data: &mut ProgressData| {
             println!(
                 "Downloaded {} of {} bytes",
                 data.bytes(),
@@ -190,7 +190,7 @@ async fn should_prefer_etag_over_last_modified() -> Result<(), Box<dyn std::erro
         .destination(&destination)
         .etag(etag.unwrap())
         .last_modified(SystemTime::UNIX_EPOCH) // definitely wrong
-        .progress(|data: &ProgressData| {
+        .progress(|data: &mut ProgressData| {
             println!(
                 "Downloaded {} of {} bytes",
                 data.bytes(),

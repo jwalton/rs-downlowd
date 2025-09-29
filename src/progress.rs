@@ -1,6 +1,9 @@
 // FIXME: Add a "progress struct" here.
 
-use std::{path::{Path, PathBuf}, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use url::Url;
 
@@ -38,24 +41,26 @@ pub struct ProgressData {
     pub(crate) bytes: u64,
     /// Total bytes in the file, if known.
     pub(crate) total_bytes: Option<u64>,
+    /// True if the download has been cancelled.
+    pub(crate) cancelled: bool,
 }
 
 /// A trait for reporting progress of a download.
 pub trait Progress {
-    fn progress(&mut self, data: &ProgressData);
+    fn progress(&mut self, data: &mut ProgressData);
 }
 
 impl<T> Progress for T
 where
-    T: FnMut(&ProgressData),
+    T: FnMut(&mut ProgressData),
 {
-    fn progress(&mut self, data: &ProgressData) {
+    fn progress(&mut self, data: &mut ProgressData) {
         self(data);
     }
 }
 
 impl Progress for Box<dyn Progress> {
-    fn progress(&mut self, data: &ProgressData) {
+    fn progress(&mut self, data: &mut ProgressData) {
         self.as_mut().progress(data);
     }
 }
@@ -107,5 +112,11 @@ impl ProgressData {
     /// Returns the total number of bytes in the file, if known.
     pub fn total_bytes(&self) -> Option<u64> {
         self.total_bytes
+    }
+
+    /// Cancel this download. This will cause the download to stop immedaitely.
+    /// Any partially downloaded file will be left on disk.
+    pub fn cancel(&mut self) {
+        self.cancelled = true;
     }
 }

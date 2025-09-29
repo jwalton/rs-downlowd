@@ -63,7 +63,7 @@ async fn should_follow_redirects() -> Result<(), Box<dyn std::error::Error>> {
     let result = client
         .download(url.clone())
         .destination(destination)
-        .progress(move |data: &ProgressData| {
+        .progress(move |data: &mut ProgressData| {
             // Verify the progress handler calims to have followed the redirect.
             assert_eq!(data.original_url().to_string(), url.to_string());
             assert_eq!(data.url().to_string(), redirect_url.to_string());

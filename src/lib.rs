@@ -252,6 +252,7 @@ impl Download {
             bytes_transferred: 0,
             bytes: local_file_size,
             total_bytes: remote_file_info.length,
+            cancelled: false,
         };
 
         let inner = DownloadInner {
@@ -383,7 +384,7 @@ impl DownloadInner {
                                 time_until_retry: Duration::from_secs(0),
                             },
                             &mut progress_data,
-                        );
+                        )?;
                     } else if !e.can_retry() {
                         return Err(e);
                     } else {
@@ -405,7 +406,7 @@ impl DownloadInner {
                                 time_until_retry: duration,
                             },
                             &mut progress_data,
-                        );
+                        )?;
                         tokio::time::sleep(duration).await;
                     }
                 }
@@ -425,7 +426,7 @@ impl DownloadInner {
         )
         .await?;
 
-        notify(&mut self.progress, ProgressEvent::Done, &mut progress_data);
+        notify(&mut self.progress, ProgressEvent::Done, &mut progress_data)?;
 
         Ok(DownloadResult {
             status: Status::Downloaded,
@@ -574,7 +575,7 @@ impl DownloadInner {
             &mut self.progress,
             ProgressEvent::BytesDownloaded,
             progress_data,
-        );
+        )?;
 
         loop {
             let chunk_result = response.chunk().await.map_err(|cause| Error::Network {
@@ -605,7 +606,7 @@ impl DownloadInner {
                 &mut self.progress,
                 ProgressEvent::BytesDownloaded,
                 progress_data,
-            );
+            )?;
         }
 
         Ok(bytes_downloaded)
@@ -674,9 +675,17 @@ fn notify(
     progress: &mut Option<Box<dyn Progress>>,
     event: ProgressEvent,
     progress_data: &mut ProgressData,
-) {
+) -> Result<(), Error> {
+    let done = matches!(event, ProgressEvent::Done);
+
     progress_data.event = event;
     if let Some(progress) = progress.as_mut() {
         progress.progress(progress_data);
     }
+
+    if progress_data.cancelled && !done {
+        return Err(Error::Cancelled);
+    }
+
+    Ok(())
 }

@@ -1,4 +1,7 @@
+use std::{io::Write, sync::OnceLock};
+
 use chrono::{DateTime, Utc};
+use rand::Fill;
 
 pub async fn head_url(url: &str) -> (Option<DateTime<Utc>>, Option<String>) {
     let http_client = reqwest::Client::new();
@@ -21,4 +24,38 @@ pub async fn head_url(url: &str) -> (Option<DateTime<Utc>>, Option<String>) {
         .map(|s| s.to_str().expect("valid string").to_owned());
 
     (last_modified, etag)
+}
+
+static BIG_FILE: OnceLock<&'static str> = OnceLock::new();
+
+/// Returns the URL path to a big file (10 MB) for testing purposes.
+/// The file is created on first use in the `test-support/static` directory.
+pub fn big_file_url() -> &'static str {
+    // Create /test-support/static/big-file.txt if it doesn't already exist.
+    BIG_FILE.get_or_init(|| {
+        let target_file_size = 10 * 1024 * 1024; // 10 MB
+
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test-support")
+            .join("static")
+            .join("big-file.txt");
+
+        let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+
+        if file_size < target_file_size {
+            let mut file = std::fs::File::create(&path).expect("create file");
+
+            // Write 10 MB of random data to the file.
+            let mut remaining = 10 * 1024 * 1024;
+            let mut buffer = [0u8; 4096];
+            let mut rng = rand::rng();
+            while remaining > 0 {
+                buffer.fill(&mut rng);
+                file.write_all(&buffer).expect("write to file");
+                remaining -= buffer.len();
+            }
+        }
+
+        "/big-file.txt"
+    })
 }

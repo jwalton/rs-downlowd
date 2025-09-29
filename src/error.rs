@@ -32,6 +32,9 @@ pub enum Error {
 
     #[error("File changed on server during download")]
     FileChanged { description: &'static str },
+
+    #[error("Download was cancelled")]
+    Cancelled,
 }
 
 impl Error {
@@ -46,7 +49,8 @@ impl Error {
             Error::InvalidUrl { .. }
             | Error::InvalidHeader { .. }
             | Error::Write { .. }
-            | Error::BadRedirect { .. } => false,
+            | Error::BadRedirect { .. }
+            | Error::Cancelled => false,
         }
     }
 }
