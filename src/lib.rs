@@ -558,8 +558,12 @@ impl DownloadInner {
         }
 
         // Copy data from the response to the .part file.
-        self.copy_response_to_file(progress_data, response, append)
-            .await?;
+        let result = self
+            .copy_response_to_file(progress_data, response, append)
+            .await;
+        // Flush the file to ensure all data is written before we return.
+        let _ = self.part_file.flush().await;
+        result?;
 
         Ok(())
     }
