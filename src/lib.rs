@@ -231,7 +231,7 @@ impl Download {
     ///        .download()
     ///        .await;
     ///
-    ///     assert!(matches!(result, Err(downlow::Error::UnexpectedStatus(404))));
+    ///     assert!(matches!(result, Err(downlow::Error::UnexpectedStatus { status: 404, .. })));
     /// #   Ok(())
     /// # }
     /// ```
@@ -751,7 +751,9 @@ async fn request(
     if !response.status().is_success() {
         return (
             returned_url,
-            Err(Error::UnexpectedStatus(response.status().as_u16())),
+            Err(Error::UnexpectedStatus {
+                status: response.status().as_u16(),
+            }),
         );
     }
 

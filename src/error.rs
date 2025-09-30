@@ -6,12 +6,15 @@ use thiserror::Error;
 #[non_exhaustive]
 pub enum Error {
     #[error("Invalid URL: {cause}")]
+    #[non_exhaustive]
     InvalidUrl { cause: String },
 
     #[error("Invalid header: {cause}")]
+    #[non_exhaustive]
     InvalidHeader { cause: String },
 
     #[error("Network error during {during} for {url}: {cause}")]
+    #[non_exhaustive]
     Network {
         during: &'static str,
         url: String,
@@ -19,19 +22,23 @@ pub enum Error {
     },
 
     #[error("Bad redirect: {reason}")]
+    #[non_exhaustive]
     BadRedirect { reason: &'static str },
 
     #[error("Error {action} for {path}: {cause}")]
+    #[non_exhaustive]
     Write {
         action: &'static str,
         path: PathBuf,
         cause: std::io::Error,
     },
 
-    #[error("Unexpected response status: {0}")]
-    UnexpectedStatus(u16),
+    #[error("Unexpected response status: {status}")]
+    #[non_exhaustive]
+    UnexpectedStatus { status: u16 },
 
     #[error("File changed on server during download")]
+    #[non_exhaustive]
     FileChanged { description: &'static str },
 
     #[error("Download was cancelled")]
@@ -43,7 +50,7 @@ impl Error {
     pub(crate) fn can_retry(&self) -> bool {
         match self {
             Error::Network { .. } | Error::FileChanged { .. } => true,
-            Error::UnexpectedStatus(status) => {
+            Error::UnexpectedStatus { status } => {
                 // 400 errors are not retryable.
                 *status < 400 || *status >= 500
             }
@@ -69,8 +76,8 @@ mod tests {
             .can_retry()
         );
 
-        assert!(Error::UnexpectedStatus(500).can_retry());
+        assert!(Error::UnexpectedStatus { status: 500 }.can_retry());
 
-        assert!(!Error::UnexpectedStatus(404).can_retry());
+        assert!(!Error::UnexpectedStatus { status: 404 }.can_retry());
     }
 }

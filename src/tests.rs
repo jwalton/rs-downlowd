@@ -263,6 +263,9 @@ async fn should_abort_on_retry() -> Result<(), Box<dyn std::error::Error>> {
         .download()
         .await;
 
-    assert!(matches!(result, Err(Error::UnexpectedStatus(500))));
+    assert!(matches!(
+        result,
+        Err(Error::UnexpectedStatus { status: 500 })
+    ));
     Ok(())
 }
