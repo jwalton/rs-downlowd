@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::AtomicU64};
 
-use downlow::{Client, Handle};
+use downlow::Client;
 use temp_dir::TempDir;
 
 use crate::integration::{constants::SERVER_URL, utils};
@@ -17,11 +17,11 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(|data: &mut Handle| {
+        .on_progress(|progress| {
             println!(
                 "Downloaded {} of {} bytes",
-                data.bytes(),
-                data.total_bytes().unwrap()
+                progress.bytes(),
+                progress.total_bytes().unwrap()
             );
         })
         .download()
@@ -47,11 +47,11 @@ async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::err
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(|data: &mut Handle| {
+        .on_progress(|progress| {
             println!(
                 "Downloaded {} of {} bytes",
-                data.bytes(),
-                data.total_bytes().unwrap()
+                progress.bytes(),
+                progress.total_bytes().unwrap()
             );
         })
         .download()
@@ -103,7 +103,7 @@ async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
         client
             .download(&url)
             .destination(&destination)
-            .progress(move |_: &mut Handle| {
+            .on_progress(move |_| {
                 progress_event_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             })
             .download()
@@ -134,14 +134,15 @@ async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::
     let result = client
         .download(&url)
         .destination(&destination)
-        .progress(|data: &mut Handle| {
-            if data.bytes() > 1_000_000 {
-                println!("Cancelling download after {} bytes", data.bytes());
-                data.cancel();
+        .on_progress(|progress| {
+            if progress.bytes() > 1_000_000 {
+                println!("Cancelling download after {} bytes", progress.bytes());
+                progress.cancel();
             }
         })
         .download()
-        .await.unwrap_err();
+        .await
+        .unwrap_err();
 
     println!("Error: {result} for {url}");
     assert!(matches!(result, downlow::Error::Cancelled));

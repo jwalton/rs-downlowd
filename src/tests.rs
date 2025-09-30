@@ -63,10 +63,10 @@ async fn should_follow_redirects() -> Result<(), Box<dyn std::error::Error>> {
     let result = client
         .download(url.clone())
         .destination(destination)
-        .progress(move |data: &mut Handle| {
+        .on_progress(move |progress| {
             // Verify the progress handler calims to have followed the redirect.
-            assert_eq!(data.original_url().to_string(), url.to_string());
-            assert_eq!(data.url().to_string(), redirect_url.to_string());
+            assert_eq!(progress.original_url().to_string(), url.to_string());
+            assert_eq!(progress.url().to_string(), redirect_url.to_string());
         })
         .download()
         .await?;
@@ -211,16 +211,58 @@ async fn should_retry_a_download() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let url = server.url("/file.txt");
     let destination = dir.path().join("my-file.txt");
-    let result = client
-        .download(url)
-        .destination(destination)
-        .download()
-        .await?;
+    let retry_count = std::sync::Arc::new(std::sync::Mutex::new(0));
 
+    let result = {
+        let retry_count = retry_count.clone();
+        client
+            .download(url)
+            .destination(destination)
+            .on_retry(move |r| {
+                let mut count = retry_count.lock().unwrap();
+                *count += 1;
+                r.set_delay(Duration::ZERO);
+            })
+            .download()
+            .await?
+    };
+
+    // Should have retried once.
+    assert_eq!(*retry_count.lock().unwrap(), 1);
+    // Should have downloaded the file.
     assert_eq!(result.bytes_downloaded, 11);
 
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
     assert_eq!(file_contents, message);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn should_abort_on_retry() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+
+    // Configure the server to expect a single GET /foo request and respond
+    // with a 200 status code.
+    let server = Server::run();
+    server.expect(
+        Expectation::matching(request::method_path("GET", "/file.txt"))
+            .respond_with(responders::status_code(500).body("boom")),
+    );
+
+    let client = Client::new();
+    let url = server.url("/file.txt");
+    let destination = dir.path().join("my-file.txt");
+
+    let result = client
+        .download(url)
+        .destination(destination)
+        .on_retry(move |r| {
+            r.cancel();
+        })
+        .download()
+        .await;
+
+    assert!(matches!(result, Err(Error::UnexpectedStatus(500))));
     Ok(())
 }

@@ -1,30 +1,10 @@
 // FIXME: Add a "progress struct" here.
 
-use std::{
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::path::{Path, PathBuf};
 
 use url::Url;
 
-use crate::Error;
-
-pub enum Event {
-    /// We've made some progress downloading the file.
-    BytesDownloaded,
-    /// We've encountered an error, and will retry.
-    Err {
-        err: Error,
-        time_until_retry: Duration,
-    },
-    /// We're done downloading the file.  The file has been renamed to its final
-    /// destination.
-    Done,
-}
-
-pub struct Handle {
-    /// The type of event we are reporting.
-    pub(crate) event: Event,
+pub struct ProgressHandle {
     /// The original URL we are downloading from.
     pub(crate) original_url: Url,
     /// The URL we are downloading from.  Note that if we followed a redirect,
@@ -46,30 +26,25 @@ pub struct Handle {
 
 /// A trait for reporting progress of a download.
 pub trait Progress {
-    fn progress(&mut self, data: &mut Handle);
+    fn progress(&mut self, data: &mut ProgressHandle);
 }
 
 impl<T> Progress for T
 where
-    T: FnMut(&mut Handle),
+    T: FnMut(&mut ProgressHandle),
 {
-    fn progress(&mut self, data: &mut Handle) {
+    fn progress(&mut self, data: &mut ProgressHandle) {
         self(data);
     }
 }
 
 impl Progress for Box<dyn Progress> {
-    fn progress(&mut self, data: &mut Handle) {
+    fn progress(&mut self, data: &mut ProgressHandle) {
         self.as_mut().progress(data);
     }
 }
 
-impl Handle {
-    /// Returns the type of event we are reporting.
-    pub fn event(&self) -> &Event {
-        &self.event
-    }
-
+impl ProgressHandle {
     /// Returns the original URL we are downloading from.
     pub fn original_url(&self) -> &Url {
         &self.original_url

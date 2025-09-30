@@ -76,7 +76,7 @@ impl Client {
 
     /// Create a file download.
     ///
-    /// example:
+    /// # Examples
     ///
     /// ```no_run
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {

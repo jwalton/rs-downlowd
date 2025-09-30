@@ -1,9 +1,8 @@
-use std::time::Duration;
 #[doc = include_str!("../README.md")]
 use std::{
     borrow::Cow,
     path::{Path, PathBuf},
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 mod client;
@@ -13,6 +12,7 @@ mod headers;
 mod into_url;
 mod io_utils;
 mod progress;
+mod retry;
 mod time;
 mod utils;
 
@@ -32,13 +32,32 @@ use crate::file_info::FileInfo;
 pub use client::{Client, ClientBuilder};
 pub use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
 pub use into_url::IntoUrl;
+pub use retry::RetryHandle;
+pub use time::exponential_backoff;
+
+pub type RetryHandler = Box<dyn FnMut(&mut RetryHandle)>;
 
 const DEFAULT_MAX_RETRIES: u64 = 5;
+const DEFAULT_MIN_DELAY: Duration = Duration::from_millis(500);
+const DEFAULT_MAX_DELAY: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status {
     Downloaded,
     Skipped,
+}
+
+fn default_retry_callback(handle: &mut RetryHandle) {
+    if matches!(handle.error(), Error::FileChanged { .. }) {
+        // No delay if the file changed.
+        handle.set_delay(Duration::ZERO);
+    } else {
+        handle.set_delay(exponential_backoff(
+            DEFAULT_MIN_DELAY,
+            DEFAULT_MAX_DELAY,
+            handle.retries(),
+        ));
+    }
 }
 
 /// Represents a file about to be downloaded.
@@ -63,7 +82,9 @@ pub struct Download {
     /// The maximum number of times we will consecutively retry without making progress.
     max_retries: u64,
     /// The callback to call to report progress.
-    progress: Option<Box<dyn Progress>>,
+    progress_handler: Option<Box<dyn Progress>>,
+    /// The handler to call when we retry a download.
+    retry_handler: RetryHandler,
     /// If there are any errors while configuring the download, we store them here,
     /// so we can return them when we actually try to start the download.
     err: Option<Error>,
@@ -81,7 +102,9 @@ struct DownloadInner {
     /// The maximum number of times we can consecutively retry without making any progress.
     max_retries: u64,
     /// Progress callback, if any.
-    progress: Option<Box<dyn Progress>>,
+    progress_handler: Option<Box<dyn Progress>>,
+    /// The handler to call when we retry a download.
+    retry_handler: RetryHandler,
     /// Temporary file we'll write while we're downloading (e.g. "file.txt.part")
     part_filename: PathBuf,
     ///  "Sidecar" file where we'll store info about the file (the etag, the last modified, etc...).  (e.g. "file.txt.downloadinfo")
@@ -120,7 +143,8 @@ impl Download {
             user_provided_remote_file_info: FileInfo::default(),
             destination: None,
             max_retries: DEFAULT_MAX_RETRIES,
-            progress: None,
+            progress_handler: None,
+            retry_handler: Box::new(default_retry_callback),
             headers: HeaderMap::new(),
             remote_file_length: None,
             err,
@@ -158,8 +182,62 @@ impl Download {
 
     /// Set the progress reporter for this download.  The given reporter will
     /// be called periodically as data is downloaded.
-    pub fn progress(mut self, progress: impl Progress + 'static) -> Self {
-        self.progress = Some(Box::new(progress));
+    pub fn on_progress(mut self, progress: impl FnMut(&mut ProgressHandle) + 'static) -> Self {
+        self.progress_handler = Some(Box::new(progress));
+        self
+    }
+
+    /// Provide a callback to be called whenever a download is retried. This can
+    /// be used to customize the retry time, or abort the download. The default
+    /// is to use exponential backoff:
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use std::time::Duration;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let client = downlow::Client::new();
+    ///     let result = client.download("https://example.com/file.txt")
+    ///        .destination("file.txt")
+    ///        .on_retry(|r| {
+    ///           if matches!(r.error(), downlow::Error::FileChanged { .. }) {
+    ///               // No delay if the file changed.
+    ///               r.set_delay(Duration::ZERO);
+    ///           } else {
+    ///               r.set_delay(downlow::exponential_backoff(
+    ///                   Duration::from_millis(500),
+    ///                   Duration::from_secs(10),
+    ///                   r.retries(),
+    ///               ));
+    ///           }
+    ///         })
+    ///        .download()
+    ///        .await?;
+    /// #   Ok(())
+    /// # }
+    /// ```
+    ///
+    /// This can also be used to abort the download on a retry by calling `r.cancel()`:
+    ///
+    /// ```no_run
+    /// # use std::time::Duration;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let client = downlow::Client::new();
+    ///     let result = client.download("https://example.com/i_do_not_exist.txt")
+    ///        .destination("file.txt")
+    ///        .on_retry(|r| {
+    ///           r.cancel();
+    ///         })
+    ///        .download()
+    ///        .await;
+    ///
+    ///     assert!(matches!(result, Err(downlow::Error::UnexpectedStatus(404))));
+    /// #   Ok(())
+    /// # }
+    /// ```
+    ///
+    pub fn on_retry(mut self, retry: impl FnMut(&mut RetryHandle) + 'static) -> Self {
+        self.retry_handler = Box::new(retry);
         self
     }
 
@@ -258,8 +336,7 @@ impl Download {
         let (part_file, local_file_size) =
             utils::file::open_file_for_writing_async(&part_filename).await?;
 
-        let progress_data = Handle {
-            event: Event::BytesDownloaded,
+        let progress_data = ProgressHandle {
             original_url: self.url,
             updated_url: self.updated_url,
             destination,
@@ -275,7 +352,8 @@ impl Download {
             headers: self.headers,
             remote_file_info,
             max_retries: self.max_retries,
-            progress: self.progress,
+            progress_handler: self.progress_handler,
+            retry_handler: self.retry_handler,
             part_filename,
             sidecar_filename,
             part_file,
@@ -372,7 +450,10 @@ impl Download {
 }
 
 impl DownloadInner {
-    async fn download(mut self, mut progress_data: Handle) -> Result<DownloadResult, Error> {
+    async fn download(
+        mut self,
+        mut progress_data: ProgressHandle,
+    ) -> Result<DownloadResult, Error> {
         let mut retries = 0;
 
         let mut done = false;
@@ -386,43 +467,43 @@ impl DownloadInner {
                     done = true;
                 }
                 Err(e) => {
-                    if matches!(e, Error::FileChanged { .. }) {
-                        // The file has changed on the server - we need to start again.
-                        self.truncate().await?;
-                        self.remote_file_info
-                            .update(&self.sidecar_filename, None, None, None)
-                            .await;
-                        notify(
-                            &mut self.progress,
-                            Event::Err {
-                                err: e,
-                                time_until_retry: Duration::from_secs(0),
-                            },
-                            &mut progress_data,
-                        )?;
-                    } else if !e.can_retry() {
+                    if !e.can_retry() {
                         return Err(e);
                     } else {
                         if progress_data.bytes_transferred > bytes_before {
                             // We made some progress - reset the retry counter.
                             retries = 0;
-                        }
-
-                        if retries > self.max_retries {
+                        } else if retries > self.max_retries {
                             return Err(e);
                         }
 
-                        // TODO: Make the wait time configurable.  Use some kind of backoff.
-                        let duration = Duration::from_secs(1);
-                        notify(
-                            &mut self.progress,
-                            Event::Err {
-                                err: e,
-                                time_until_retry: duration,
-                            },
-                            &mut progress_data,
-                        )?;
-                        tokio::time::sleep(duration).await;
+                        let mut delay = time::exponential_backoff(
+                            DEFAULT_MIN_DELAY,
+                            DEFAULT_MAX_DELAY,
+                            retries,
+                        );
+
+                        if matches!(e, Error::FileChanged { .. }) {
+                            // The file has changed on the server - we need to start again.
+                            self.truncate().await?;
+                            self.remote_file_info
+                                .update(&self.sidecar_filename, None, None, None)
+                                .await;
+                            delay = Duration::from_secs(0);
+                        }
+
+                        let mut retry_handle = RetryHandle {
+                            total_tries: progress_data.tries,
+                            retries,
+                            delay,
+                            error: e,
+                            cancelled: false,
+                        };
+                        (self.retry_handler)(&mut retry_handle);
+                        if retry_handle.cancelled {
+                            return Err(retry_handle.error);
+                        }
+                        tokio::time::sleep(retry_handle.delay).await;
                     }
                 }
             }
@@ -441,7 +522,7 @@ impl DownloadInner {
         )
         .await?;
 
-        notify(&mut self.progress, Event::Done, &mut progress_data)?;
+        notify(&mut self.progress_handler, &mut progress_data)?;
 
         Ok(DownloadResult {
             status: Status::Downloaded,
@@ -453,7 +534,7 @@ impl DownloadInner {
 
     /// This is the "inner loop" of the download. Try to download the file, and return
     /// an error if it fails for any reason.  The caller can then decide whether to retry or not.
-    async fn try_download(&mut self, progress_data: &mut Handle) -> Result<(), Error> {
+    async fn try_download(&mut self, progress_data: &mut ProgressHandle) -> Result<(), Error> {
         // Make our GET request.
         let response = self.get_file(progress_data).await?;
 
@@ -548,7 +629,7 @@ impl DownloadInner {
     }
 
     /// Send a GET request for the file.
-    async fn get_file(&mut self, progress_data: &mut Handle) -> Result<Response, Error> {
+    async fn get_file(&mut self, progress_data: &mut ProgressHandle) -> Result<Response, Error> {
         let mut headers = self.headers.clone();
         self.add_resume_download_headers(&mut headers);
         let url = progress_data.url();
@@ -569,7 +650,7 @@ impl DownloadInner {
     /// Returns the total number of bytes written to the file, whether or not this succeeds.
     async fn copy_response_to_file(
         &mut self,
-        progress_data: &mut Handle,
+        progress_data: &mut ProgressHandle,
         mut response: Response,
         append: bool,
     ) -> Result<u64, Error> {
@@ -586,7 +667,7 @@ impl DownloadInner {
             .or(self.remote_file_info.length);
 
         // Initial call into the progress callback.
-        notify(&mut self.progress, Event::BytesDownloaded, progress_data)?;
+        notify(&mut self.progress_handler, progress_data)?;
 
         loop {
             let chunk_result = response.chunk().await.map_err(|cause| Error::Network {
@@ -613,7 +694,7 @@ impl DownloadInner {
             self.local_file_size += chunk_size;
             progress_data.bytes_transferred += chunk_size;
             progress_data.bytes = self.local_file_size;
-            notify(&mut self.progress, Event::BytesDownloaded, progress_data)?;
+            notify(&mut self.progress_handler, progress_data)?;
         }
 
         Ok(bytes_downloaded)
@@ -657,7 +738,6 @@ async fn request(
     let response = match response {
         Ok(r) => r,
         Err(e) => {
-            println!("Error during request: {e}");
             return (None, Err(e));
         }
     };
@@ -680,17 +760,13 @@ async fn request(
 
 fn notify(
     progress: &mut Option<Box<dyn Progress>>,
-    event: Event,
-    progress_data: &mut Handle,
+    progress_data: &mut ProgressHandle,
 ) -> Result<(), Error> {
-    let done = matches!(event, Event::Done);
-
-    progress_data.event = event;
     if let Some(progress) = progress.as_mut() {
         progress.progress(progress_data);
     }
 
-    if progress_data.cancelled && !done {
+    if progress_data.cancelled {
         return Err(Error::Cancelled);
     }
 

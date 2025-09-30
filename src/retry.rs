@@ -1,0 +1,48 @@
+
+/// Handle passed to the `on_retry` callback.
+pub struct RetryHandle {
+    /// The total number of tries so far to download this file.
+    pub(crate) total_tries: u64,
+    /// The number of consecutive retries due to errors.
+    pub(crate) retries: u64,
+    /// The delay before the next retry.
+    pub(crate) delay: std::time::Duration,
+    /// The error that caused the retry.
+    pub(crate) error: crate::Error,
+    /// True if the download has been cancelled.
+    pub(crate) cancelled: bool,
+}
+
+impl RetryHandle {
+    /// Returns the total number of tries so far to download this file.
+    pub fn total_tries(&self) -> u64 {
+        self.total_tries
+    }
+
+    /// Returns the number of consecutive retries due to errors.  This number
+    /// resets to zero if we make progress downloading a file.
+    pub fn retries(&self) -> u64 {
+        self.retries
+    }
+
+    /// Returns the delay before the next retry.
+    pub fn delay(&self) -> std::time::Duration {
+        self.delay
+    }
+
+    /// Sets the delay before the next retry.
+    pub fn set_delay(&mut self, delay: std::time::Duration) {
+        self.delay = delay;
+    }
+
+    /// Returns the error that caused the retry.
+    pub fn error(&self) -> &crate::Error {
+        &self.error
+    }
+
+    /// Cancels the download.  This will cause the download to fail the error
+    /// that caused the retry.
+    pub fn cancel(&mut self) {
+        self.cancelled = true;
+    }
+}
