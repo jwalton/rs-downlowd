@@ -18,7 +18,7 @@ impl ClientBuilder {
     /// Create a new ClientBuilder with the given user agent.
     pub fn new() -> Self {
         ClientBuilder {
-            user_agent: "best_file_downloader/1.0".to_string(),
+            user_agent: "downlow/1.0".to_string(),
             headers: HeaderMap::new(),
             err: None,
         }
@@ -80,7 +80,7 @@ impl Client {
     ///
     /// ```no_run
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = best_file_downloader::Client::new();
+    ///     let client = downlow::Client::new();
     ///     let result = client.download("https://example.com/file.txt")
     ///        .destination("file.txt")
     ///        .download()

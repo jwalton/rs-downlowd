@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::AtomicU64};
 
-use best_file_downloader::{Client, Handle};
+use downlow::{Client, Handle};
 use temp_dir::TempDir;
 
 use crate::integration::{constants::SERVER_URL, utils};
@@ -57,7 +57,7 @@ async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::err
         .download()
         .await?;
 
-    assert_eq!(result.status, best_file_downloader::Status::Skipped);
+    assert_eq!(result.status, downlow::Status::Skipped);
     assert_eq!(&result.path, &destination);
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
     assert_eq!(file_contents, MESSAGE);
@@ -81,7 +81,7 @@ async fn should_not_skip_a_file_if_the_size_is_wrong() -> Result<(), Box<dyn std
         .download()
         .await?;
 
-    assert_eq!(result.status, best_file_downloader::Status::Downloaded);
+    assert_eq!(result.status, downlow::Status::Downloaded);
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
     assert_eq!(file_contents, MESSAGE);
 
@@ -144,7 +144,7 @@ async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::
         .await.unwrap_err();
 
     println!("Error: {result} for {url}");
-    assert!(matches!(result, best_file_downloader::Error::Cancelled));
+    assert!(matches!(result, downlow::Error::Cancelled));
     let file_size = tokio::fs::metadata(&part_file).await?.len();
     assert!(file_size > 1_000_000);
     assert!(file_size < 10 * 1024 * 1024);
@@ -156,7 +156,7 @@ async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::
         .download()
         .await?;
 
-    assert_eq!(result.status, best_file_downloader::Status::Downloaded);
+    assert_eq!(result.status, downlow::Status::Downloaded);
     assert_eq!(&result.path, &destination);
     let file_size = tokio::fs::metadata(&destination).await?.len();
     assert_eq!(file_size, 10 * 1024 * 1024);

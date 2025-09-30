@@ -13,6 +13,7 @@ mod headers;
 mod into_url;
 mod io_utils;
 mod progress;
+mod time;
 mod utils;
 
 #[cfg(test)]
@@ -585,11 +586,7 @@ impl DownloadInner {
             .or(self.remote_file_info.length);
 
         // Initial call into the progress callback.
-        notify(
-            &mut self.progress,
-            Event::BytesDownloaded,
-            progress_data,
-        )?;
+        notify(&mut self.progress, Event::BytesDownloaded, progress_data)?;
 
         loop {
             let chunk_result = response.chunk().await.map_err(|cause| Error::Network {
@@ -616,11 +613,7 @@ impl DownloadInner {
             self.local_file_size += chunk_size;
             progress_data.bytes_transferred += chunk_size;
             progress_data.bytes = self.local_file_size;
-            notify(
-                &mut self.progress,
-                Event::BytesDownloaded,
-                progress_data,
-            )?;
+            notify(&mut self.progress, Event::BytesDownloaded, progress_data)?;
         }
 
         Ok(bytes_downloaded)

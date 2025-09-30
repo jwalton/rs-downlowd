@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use best_file_downloader::{Client, Handle};
+use downlow::{Client, Handle};
 use temp_dir::TempDir;
 
 use crate::integration::{constants::SERVER_URL, utils};
