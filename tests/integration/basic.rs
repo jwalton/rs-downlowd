@@ -1,5 +1,3 @@
-use std::sync::{Arc, atomic::AtomicU64};
-
 use downlow::Client;
 use temp_dir::TempDir;
 
@@ -94,31 +92,21 @@ async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
-    let progress_event_count = Arc::new(AtomicU64::new(0));
-
-    // TODO: Verify we don't retry.
     let client = Client::new();
-    let result = {
-        let progress_event_count = progress_event_count.clone();
-        client
-            .download(&url)
-            .destination(&destination)
-            .on_progress(move |_| {
-                progress_event_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            })
-            .download()
-            .await
-    };
+    let result = client
+        .download(&url)
+        .destination(&destination)
+        .on_retry(move |_| {
+            panic!("Should not retry on 404");
+        })
+        .on_progress(move |_| {
+            panic!("Should not call progress handler on 404");
+        })
+        .download()
+        .await;
 
     let err = result.err().unwrap();
     assert_eq!(format!("{}", err), "Unexpected response status: 404");
-
-    // We should have made only a single attempt and failed right away, so there
-    // should be no progress events at all.
-    assert_eq!(
-        progress_event_count.load(std::sync::atomic::Ordering::SeqCst),
-        0
-    );
 
     Ok(())
 }
