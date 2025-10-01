@@ -1,6 +1,6 @@
 // FIXME: Add a "progress struct" here.
 
-use std::{path::{Path, PathBuf}, time::SystemTime};
+use std::path::{Path, PathBuf};
 
 use url::Url;
 
@@ -25,7 +25,7 @@ pub struct ProgressHandle {
     /// The etag for the file, if known.
     pub(crate) etag: Option<String>,
     /// The last modified time for the file, if known.
-    pub(crate) last_modified: Option<SystemTime>,
+    pub(crate) last_modified: Option<String>,
 }
 
 /// A trait for reporting progress of a download.
@@ -104,7 +104,7 @@ impl ProgressHandle {
     }
 
     /// Return the last modified time for the file, if known.
-    pub fn last_modified(&self) -> Option<SystemTime> {
-        self.last_modified
+    pub fn last_modified(&self) -> Option<&str> {
+        self.last_modified.as_deref()
     }
 }

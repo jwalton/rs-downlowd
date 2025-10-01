@@ -19,7 +19,7 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
         .destination(destination)
         .on_progress(move |progress| {
             assert_eq!(progress.etag().unwrap(), head.etag);
-            assert_eq!(progress.last_modified().unwrap(), head.last_modified.into());
+            assert_eq!(progress.last_modified().unwrap(), head.last_modified);
             assert_eq!(progress.total_bytes().unwrap(), head.content_length);
 
             println!(

@@ -1,6 +1,5 @@
-use std::{path::Path, time::SystemTime};
+use std::path::Path;
 
-use chrono::{DateTime, Utc};
 use downlow::Client;
 use temp_dir::TempDir;
 
@@ -10,13 +9,13 @@ const MESSAGE: &str = "hello world";
 
 async fn write_sidecar_file(
     path: &Path,
-    last_modified: Option<DateTime<Utc>>,
+    last_modified: Option<&str>,
     etag: Option<&str>,
     content_length: Option<u64>,
 ) -> std::io::Result<()> {
     let mut contents = String::new();
     if let Some(last_modified) = last_modified {
-        contents.push_str(&format!("Last-Modified: {}\n", last_modified.to_rfc3339()));
+        contents.push_str(&format!("Last-Modified: {last_modified}\n"));
     }
     if let Some(etag) = etag {
         contents.push_str(&format!("Etag: {etag}\n",));
@@ -42,7 +41,7 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let result = client
         .download(&url)
-        .last_modified(head.last_modified.into())
+        .last_modified(head.last_modified)
         .destination(&destination)
         .download()
         .await?;
@@ -70,7 +69,7 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
     let sidecar_file = dir.path().join("my-file.txt.downloadinfo");
     write_sidecar_file(
         &sidecar_file,
-        Some(head.last_modified),
+        Some(&head.last_modified),
         Some(&head.etag),
         Some(head.content_length),
     )
@@ -119,7 +118,7 @@ async fn should_not_continue_a_file_from_sidecar_if_length_etag_changed()
     let sidecar_file = dir.path().join("my-file.txt.downloadinfo");
     write_sidecar_file(
         &sidecar_file,
-        Some(head.last_modified),
+        Some(&head.last_modified),
         Some("wrong"),
         Some(head.content_length),
     )
@@ -161,7 +160,7 @@ async fn should_not_continue_a_file_from_sidecar_if_length_has_changed()
     let sidecar_file = dir.path().join("my-file.txt.downloadinfo");
     write_sidecar_file(
         &sidecar_file,
-        Some(head.last_modified),
+        Some(&head.last_modified),
         Some(&head.etag),
         Some(5),
     )
@@ -191,7 +190,7 @@ async fn should_not_continue_a_file_with_wrong_last_modified()
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
-    // Create a partial file to simulate a previous download, but don't set the last modified time.
+    // Create a partial file to simulate a previous download.
     let part_file = dir.path().join("my-file.txt.part");
     tokio::fs::write(&part_file, &MESSAGE[..5]).await?;
 
@@ -199,7 +198,7 @@ async fn should_not_continue_a_file_with_wrong_last_modified()
     let result = client
         .download(&url)
         .destination(&destination)
-        .last_modified(SystemTime::UNIX_EPOCH) // definitely wrong
+        .last_modified("wrong")
         .download()
         .await?;
 
@@ -218,7 +217,7 @@ async fn should_prefer_etag_over_last_modified() -> Result<(), Box<dyn std::erro
     let destination = dir.path().join("my-file.txt");
     let head = utils::head_url(&url).await;
 
-    // Create a partial file to simulate a previous download, but don't set the last modified time.
+    // Create a partial file to simulate a previous download.
     let part_file = dir.path().join("my-file.txt.part");
     tokio::fs::write(&part_file, &MESSAGE[..5]).await?;
 
@@ -227,7 +226,7 @@ async fn should_prefer_etag_over_last_modified() -> Result<(), Box<dyn std::erro
         .download(&url)
         .destination(&destination)
         .etag(head.etag)
-        .last_modified(SystemTime::UNIX_EPOCH) // definitely wrong
+        .last_modified("wrong")
         .download()
         .await?;
 
@@ -253,7 +252,7 @@ async fn should_prefer_user_etag_over_sidecar_file() -> Result<(), Box<dyn std::
     let sidecar_file = dir.path().join("my-file.txt.downloadinfo");
     write_sidecar_file(
         &sidecar_file,
-        Some(head.last_modified),
+        Some(&head.last_modified),
         Some("wrong"),
         Some(head.content_length),
     )

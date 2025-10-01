@@ -6,19 +6,19 @@ use std::{
 
 use chrono::{DateTime, Utc};
 
-use crate::Error;
+use crate::{headers::parse_last_modified, Error};
 
 /// Finalize a download by renaming the part file to the destination file.
 pub async fn finalize_download(
     part_file: &Path,
     sidecar_file: &Path,
     destination: &Path,
-    modified: Option<&DateTime<Utc>>,
+    modified: Option<&str>,
 ) -> Result<(), Error> {
     let part_file = part_file.to_owned();
     let sidecar_file = sidecar_file.to_owned();
     let destination = destination.to_owned();
-    let modified = modified.map(|dt| dt.to_owned());
+    let modified = modified.and_then(parse_last_modified);
 
     tokio::task::spawn_blocking(move || {
         finalize_download_sync(&sidecar_file, &part_file, &destination, modified.as_ref())

@@ -3,7 +3,7 @@
 use std::{
     borrow::Cow,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 mod client;
@@ -20,7 +20,6 @@ mod utils;
 #[cfg(test)]
 mod tests;
 
-use chrono::{DateTime, Utc};
 pub use error::Error;
 use http::Method;
 pub use progress::*;
@@ -270,8 +269,8 @@ impl Download {
     /// the download to verify that the file has not changed on the server before
     /// resuming.  If neither this nor the etag are set, then the mtime of the existing
     /// file on disk will be used in place of the last modified time.
-    pub fn last_modified(mut self, last_modified: SystemTime) -> Self {
-        self.user_provided_remote_file_info.modified = Some(last_modified.into());
+    pub fn last_modified(mut self, last_modified: impl Into<String>) -> Self {
+        self.user_provided_remote_file_info.last_modified = Some(last_modified.into());
         self
     }
 
@@ -324,7 +323,7 @@ impl Download {
         let sidecar_filename = utils::file::add_extension(&destination, "downloadinfo");
 
         let mut remote_file_info = self.user_provided_remote_file_info;
-        if remote_file_info.etag.is_some() || remote_file_info.modified.is_some() {
+        if remote_file_info.etag.is_some() || remote_file_info.last_modified.is_some() {
             // User provided some info about the file - use it.
         } else {
             // See if there's a sidecar file with info about the file.
@@ -344,9 +343,9 @@ impl Download {
             tries: 0,
             bytes_transferred: 0,
             bytes: local_file_size,
-            total_bytes: remote_file_info.length,
+            total_bytes: remote_file_info.content_length,
             etag: remote_file_info.etag.clone(),
-            last_modified: remote_file_info.modified.map(|dt| dt.into()),
+            last_modified: remote_file_info.last_modified.clone(),
             cancelled: false,
         };
 
@@ -521,7 +520,7 @@ impl DownloadInner {
             &self.part_filename,
             &self.sidecar_filename,
             &progress_data.destination,
-            self.remote_file_info.modified.as_ref(),
+            self.remote_file_info.last_modified.as_deref(),
         )
         .await?;
 
@@ -542,23 +541,23 @@ impl DownloadInner {
         // If the server returns a "206 - Partial content", we're resuming the download,
         // so we should append to the existing file.  Otherwise, we should overwrite it.
         let append = response.status().as_u16() == 206; // Partial content
-        let last_modified = headers::parse_last_modified(&response);
-        let etag = headers::etag(&response).map(|s| s.to_string());
+        let last_modified = headers::get_last_modified(&response);
+        let etag = headers::etag(&response);
         let content_length = headers::parse_content_length(&response);
 
         if append {
             // If we're trying to append to an existing file, but the file has changed on
             // the server, then error.  This SHOULD never happen, thanks to the `If-Range`
             // header we sent, but some servers are not well behaved.
-            self.validate_file_unchanged(last_modified, &etag, content_length)?;
+            self.validate_file_unchanged(last_modified, etag, content_length)?;
         } else {
             // If we're not resuming, then update our info about the remote file.
             self.remote_file_info
                 .update(&self.sidecar_filename, content_length, last_modified, etag)
                 .await;
             progress_data.etag = self.remote_file_info.etag.clone();
-            progress_data.last_modified = self.remote_file_info.modified.map(|dt| dt.into());
-            progress_data.total_bytes = self.remote_file_info.length;
+            progress_data.last_modified = self.remote_file_info.last_modified.clone();
+            progress_data.total_bytes = self.remote_file_info.content_length;
         }
 
         // Copy data from the response to the .part file.
@@ -574,12 +573,12 @@ impl DownloadInner {
 
     fn validate_file_unchanged(
         &mut self,
-        last_modified: Option<DateTime<Utc>>,
-        etag: &Option<String>,
+        last_modified: Option<&str>,
+        etag: Option<&str>,
         content_length: Option<u64>,
     ) -> Result<(), Error> {
         if self.remote_file_info.etag.is_some() && etag.is_some() {
-            if self.remote_file_info.etag != *etag {
+            if self.remote_file_info.etag.as_deref() != etag {
                 return Err(Error::FileChanged {
                     description: "etag changed",
                 });
@@ -588,9 +587,9 @@ impl DownloadInner {
             // Only check last-modified if we don't have an etag.  If the modified
             // time has changed, but the etag is the same, assume the file hasn't
             // actually changed.
-            if self.remote_file_info.modified.is_some()
+            if self.remote_file_info.last_modified.is_some()
                 && last_modified.is_some()
-                && self.remote_file_info.modified != last_modified
+                && self.remote_file_info.last_modified.as_deref() != last_modified
             {
                 return Err(Error::FileChanged {
                     description: "last modified time changed",
@@ -600,7 +599,7 @@ impl DownloadInner {
 
         // TODO: If the content-length header is missing, use the content-range header instead.
         if let (Some(remote_length), Some(content_length)) =
-            (self.remote_file_info.length, content_length)
+            (self.remote_file_info.content_length, content_length)
         {
             let final_length = self.local_file_size + content_length;
             if remote_length != final_length {
@@ -616,22 +615,16 @@ impl DownloadInner {
     /// Work out the range headers to use to resume the download.
     fn add_resume_download_headers(&self, headers: &mut HeaderMap) {
         let local_file_size = self.local_file_size;
-        let last_modified = self.remote_file_info.modified.as_ref();
+        let last_modified = self.remote_file_info.last_modified.as_deref();
         let etag = self.remote_file_info.etag.as_deref();
 
         if local_file_size > 0 {
-            if let Some(if_range) = etag
-                .map(Cow::Borrowed)
-                .or_else(|| last_modified.map(|dt| Cow::Owned(dt.to_rfc2822())))
-            {
+            if let Some(if_range) = etag.or(last_modified) {
                 headers.insert(
                     "Range",
                     HeaderValue::from_str(&format!("bytes={local_file_size}-")).unwrap(),
                 );
-                headers.insert(
-                    "If-Range",
-                    HeaderValue::from_str(if_range.as_ref()).unwrap(),
-                );
+                headers.insert("If-Range", HeaderValue::from_str(if_range).unwrap());
             }
         }
     }
@@ -672,7 +665,7 @@ impl DownloadInner {
         progress_data.total_bytes = response
             .content_length()
             .map(|v| v + initial_size)
-            .or(self.remote_file_info.length);
+            .or(self.remote_file_info.content_length);
 
         // Initial call into the progress callback.
         notify(&mut self.progress_handler, progress_data)?;

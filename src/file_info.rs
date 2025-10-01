@@ -1,14 +1,12 @@
 use std::{fs, path::Path};
 
-use chrono::{DateTime, Utc};
-
 use crate::Error;
 
 /// Information we know about a file.
 #[derive(Debug, Default)]
 pub struct FileInfo {
-    pub length: Option<u64>,
-    pub modified: Option<DateTime<Utc>>,
+    pub content_length: Option<u64>,
+    pub last_modified: Option<String>,
     pub etag: Option<String>,
 }
 
@@ -17,11 +15,11 @@ impl FileInfo {
     pub fn serialize(&self) -> String {
         let mut result = String::new();
 
-        if let Some(len) = self.length {
+        if let Some(len) = self.content_length {
             result.push_str(&format!("Content-Length: {len}\n"));
         }
-        if let Some(modified) = &self.modified {
-            result.push_str(&format!("Last-Modified: {}\n", modified.to_rfc3339()));
+        if let Some(last_modified) = &self.last_modified {
+            result.push_str(&format!("Last-Modified: {last_modified}\n"));
         }
         if let Some(etag) = &self.etag {
             result.push_str(&format!("Etag: {etag}\n",));
@@ -32,8 +30,8 @@ impl FileInfo {
 
     /// Deserialize a FileInfo from a string.
     pub fn deserialize(&mut self, s: &str) -> Result<(), Error> {
-        self.length = None;
-        self.modified = None;
+        self.content_length = None;
+        self.last_modified = None;
         self.etag = None;
 
         for line in s.lines() {
@@ -50,13 +48,11 @@ impl FileInfo {
             match key {
                 "Content-Length" => {
                     if let Ok(v) = value.parse::<u64>() {
-                        self.length = Some(v);
+                        self.content_length = Some(v);
                     }
                 }
                 "Last-Modified" => {
-                    if let Ok(v) = DateTime::parse_from_rfc3339(value) {
-                        self.modified = Some(v.with_timezone(&Utc));
-                    }
+                    self.last_modified = Some(value.to_string());
                 }
                 "Etag" => {
                     self.etag = Some(value.to_string());
@@ -75,8 +71,8 @@ impl FileInfo {
         &mut self,
         sidecar_file: &Path,
         content_length: Option<u64>,
-        last_modified: Option<DateTime<Utc>>,
-        etag: Option<String>,
+        last_modified: Option<&str>,
+        etag: Option<&str>,
     ) {
         let serialized = self.update_inner(content_length, last_modified, etag);
         let sidecar_file = sidecar_file.to_owned();
@@ -96,20 +92,22 @@ impl FileInfo {
     pub fn update_inner(
         &mut self,
         content_length: Option<u64>,
-        last_modified: Option<DateTime<Utc>>,
-        etag: Option<String>,
+        last_modified: Option<&str>,
+        etag: Option<&str>,
     ) -> Option<String> {
         let mut serialized = None;
 
-        let changed =
-            self.length != content_length || self.modified != last_modified || self.etag != etag;
+        let changed = self.content_length != content_length
+            || self.last_modified.as_deref() != last_modified
+            || self.etag.as_deref() != etag;
 
         if changed {
-            self.length = content_length;
-            self.modified = last_modified;
-            self.etag = etag;
+            self.content_length = content_length;
+            self.last_modified = last_modified.map(str::to_string);
+            self.etag = etag.map(str::to_string);
 
-            if self.length.is_some() || self.modified.is_some() || self.etag.is_some() {
+            if self.content_length.is_some() || self.last_modified.is_some() || self.etag.is_some()
+            {
                 serialized = Some(self.serialize());
             }
         }
@@ -123,19 +121,15 @@ mod tests {
     use super::*;
 
     const SAMPLE: &str = r#"Content-Length: 1234
-Last-Modified: 2023-10-01T12:34:56+00:00
+Last-Modified: 2023-10-01T12:34:56Z
 Etag: abc123
 "#;
 
     #[test]
     fn test_serialize_serialize() {
         let info = FileInfo {
-            length: Some(1234),
-            modified: Some(
-                DateTime::parse_from_rfc3339("2023-10-01T12:34:56Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            ),
+            content_length: Some(1234),
+            last_modified: Some("2023-10-01T12:34:56Z".to_string()),
             etag: Some("abc123".to_string()),
         };
 
@@ -145,8 +139,8 @@ Etag: abc123
         let mut deserialized = FileInfo::default();
         deserialized.deserialize(&serialized).unwrap();
 
-        assert_eq!(info.length, deserialized.length);
-        assert_eq!(info.modified, deserialized.modified);
+        assert_eq!(info.content_length, deserialized.content_length);
+        assert_eq!(info.last_modified, deserialized.last_modified);
         assert_eq!(info.etag, deserialized.etag);
     }
 
@@ -161,8 +155,8 @@ Etag: abc123
     fn should_deserialize_empty_file() {
         let mut info = FileInfo::default();
         info.deserialize("").unwrap();
-        assert_eq!(info.length, None);
-        assert_eq!(info.modified, None);
+        assert_eq!(info.content_length, None);
+        assert_eq!(info.last_modified, None);
         assert_eq!(info.etag, None);
     }
 }

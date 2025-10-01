@@ -49,12 +49,13 @@ pub fn etag(response: &Response) -> Option<&str> {
     get_header_str(response, &reqwest::header::ETAG)
 }
 
-/// Parses the `Last-Modified` header value into a `DateTime<Utc>`.
-pub fn parse_last_modified(response: &Response) -> Option<DateTime<Utc>> {
-    get_header_str(response, &reqwest::header::LAST_MODIFIED).and_then(parse_last_modified_str)
+/// Returns the value of the last_modified header, if present.
+pub fn get_last_modified(response: &Response) -> Option<&str> {
+    get_header_str(response, &reqwest::header::LAST_MODIFIED)
 }
 
-fn parse_last_modified_str(value: &str) -> Option<DateTime<Utc>> {
+/// Parses a `Last-Modified` header value into a `DateTime<Utc>`.
+pub fn parse_last_modified(value: &str) -> Option<DateTime<Utc>> {
     let value = value.trim();
     parse_date_time_rfc2822(value)
         .or_else(|| parse_date_time_rfc850(value))
@@ -112,16 +113,16 @@ mod tests {
     #[test]
     fn test_parse_last_modified() {
         // Examples taken from [RFC9110](https://datatracker.ietf.org/doc/html/rfc9110#section-5.6.7).
-        let value = parse_last_modified_str("Sun, 06 Nov 1994 08:49:37 GMT");
+        let value = parse_last_modified("Sun, 06 Nov 1994 08:49:37 GMT");
         assert_eq!(value.unwrap().to_rfc3339(), "1994-11-06T08:49:37+00:00");
 
-        let value = parse_last_modified_str("Sunday, 06-Nov-94 08:49:37 GMT");
+        let value = parse_last_modified("Sunday, 06-Nov-94 08:49:37 GMT");
         assert_eq!(value.unwrap().to_rfc3339(), "1994-11-06T08:49:37+00:00");
 
-        let value = parse_last_modified_str("Sun Nov  6 08:49:37 1994");
+        let value = parse_last_modified("Sun Nov  6 08:49:37 1994");
         assert_eq!(value.unwrap().to_rfc3339(), "1994-11-06T08:49:37+00:00");
 
-        let value = parse_last_modified_str("Some nonsense");
+        let value = parse_last_modified("Some nonsense");
         assert_eq!(value, None);
     }
 }

@@ -1,10 +1,9 @@
 use std::{io::Write, sync::OnceLock};
 
-use chrono::{DateTime, Utc};
 use rand::Fill;
 
 pub struct HeadData {
-    pub last_modified: DateTime<Utc>,
+    pub last_modified: String,
     pub etag: String,
     pub content_length: u64,
 }
@@ -18,11 +17,7 @@ pub async fn head_url(url: &str) -> HeadData {
     let last_modified = response
         .headers()
         .get(reqwest::header::LAST_MODIFIED)
-        .map(|s| {
-            chrono::DateTime::parse_from_rfc2822(s.to_str().expect("valid string"))
-                .expect("valid date")
-                .with_timezone(&chrono::Utc)
-        })
+        .map(|s| s.to_str().expect("valid string").to_owned())
         .unwrap();
 
     let etag = response
