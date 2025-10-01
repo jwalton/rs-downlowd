@@ -1,6 +1,6 @@
 use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
 
-use crate::{Download, Error, IntoUrl};
+use crate::{Download, Error, IntoUrl, utils};
 
 /// Builder for creating a `Client` with custom configuration.
 pub struct ClientBuilder {
@@ -30,7 +30,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Add a custom header to the client.
+    /// Add a default header for every request.
     pub fn header<K, V>(mut self, key: K, value: V) -> Self
     where
         K: IntoHeaderName,
@@ -39,7 +39,7 @@ impl ClientBuilder {
     {
         match value.try_into() {
             Ok(v) => {
-                self.headers.insert(key, v);
+                self.headers.append(key, v);
             }
             Err(e) => {
                 self.err = Some(Error::InvalidHeader {
@@ -51,11 +51,9 @@ impl ClientBuilder {
         self
     }
 
-    /// Set default headers for the client.
-    pub fn add_headers(mut self, headers: HeaderMap) -> Self {
-        for (key, value) in headers.iter() {
-            self.headers.insert(key, value.clone());
-        }
+    /// Set the default headers for every request.
+    pub fn headers(mut self, headers: HeaderMap) -> Self {
+        utils::http::append_all_headers(&mut self.headers, headers);
         self
     }
 

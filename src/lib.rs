@@ -151,7 +151,7 @@ impl Download {
         }
     }
 
-    /// Add a custom header for this download.
+    /// Add a header to this `Download`.
     pub fn header<K, V>(mut self, key: K, value: V) -> Self
     where
         K: IntoHeaderName,
@@ -160,7 +160,7 @@ impl Download {
     {
         match value.try_into() {
             Ok(v) => {
-                self.headers.insert(key, v);
+                self.headers.append(key, v);
             }
             Err(e) => {
                 self.err = Some(Error::InvalidHeader {
@@ -172,11 +172,10 @@ impl Download {
         self
     }
 
-    /// Add multiple headers for this download.
-    pub fn add_headers(mut self, headers: HeaderMap) -> Self {
-        for (key, value) in headers.iter() {
-            self.headers.insert(key, value.clone());
-        }
+    /// Add a set of Headers to the existing ones on this `Download`.
+    /// The headers will be merged in to any already set.
+    pub fn appeheadersnd_headers(mut self, headers: HeaderMap) -> Self {
+        utils::http::append_all_headers(&mut self.headers, headers);
         self
     }
 
