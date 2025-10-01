@@ -1,4 +1,5 @@
-#[doc = include_str!("../README.md")]
+#![doc = include_str!("../README.md")]
+
 use std::{
     borrow::Cow,
     path::{Path, PathBuf},
@@ -344,6 +345,8 @@ impl Download {
             bytes_transferred: 0,
             bytes: local_file_size,
             total_bytes: remote_file_info.length,
+            etag: remote_file_info.etag.clone(),
+            last_modified: remote_file_info.modified.map(|dt| dt.into()),
             cancelled: false,
         };
 
@@ -522,8 +525,6 @@ impl DownloadInner {
         )
         .await?;
 
-        notify(&mut self.progress_handler, &mut progress_data)?;
-
         Ok(DownloadResult {
             status: Status::Downloaded,
             tries: progress_data.tries,
@@ -555,6 +556,9 @@ impl DownloadInner {
             self.remote_file_info
                 .update(&self.sidecar_filename, content_length, last_modified, etag)
                 .await;
+            progress_data.etag = self.remote_file_info.etag.clone();
+            progress_data.last_modified = self.remote_file_info.modified.map(|dt| dt.into());
+            progress_data.total_bytes = self.remote_file_info.length;
         }
 
         // Copy data from the response to the .part file.

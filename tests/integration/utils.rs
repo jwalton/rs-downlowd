@@ -3,7 +3,13 @@ use std::{io::Write, sync::OnceLock};
 use chrono::{DateTime, Utc};
 use rand::Fill;
 
-pub async fn head_url(url: &str) -> (Option<DateTime<Utc>>, Option<String>) {
+pub struct HeadData {
+    pub last_modified: DateTime<Utc>,
+    pub etag: String,
+    pub content_length: u64,
+}
+
+pub async fn head_url(url: &str) -> HeadData {
     let http_client = reqwest::Client::new();
     let response = http_client.head(url).send().await.expect("url to exist");
 
@@ -16,14 +22,31 @@ pub async fn head_url(url: &str) -> (Option<DateTime<Utc>>, Option<String>) {
             chrono::DateTime::parse_from_rfc2822(s.to_str().expect("valid string"))
                 .expect("valid date")
                 .with_timezone(&chrono::Utc)
-        });
+        })
+        .unwrap();
 
     let etag = response
         .headers()
         .get(reqwest::header::ETAG)
-        .map(|s| s.to_str().expect("valid string").to_owned());
+        .map(|s| s.to_str().expect("valid string").to_owned())
+        .unwrap();
 
-    (last_modified, etag)
+    let content_length = response
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .map(|s| {
+            s.to_str()
+                .expect("valid string")
+                .parse::<u64>()
+                .expect("valid u64")
+        })
+        .unwrap();
+
+    HeadData {
+        last_modified,
+        etag,
+        content_length,
+    }
 }
 
 static BIG_FILE: OnceLock<&'static str> = OnceLock::new();

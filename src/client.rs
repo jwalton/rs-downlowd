@@ -24,6 +24,12 @@ impl ClientBuilder {
         }
     }
 
+    /// Set the user agent for the client.
+    pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        self.user_agent = user_agent.into();
+        self
+    }
+
     /// Add a custom header to the client.
     pub fn header<K, V>(mut self, key: K, value: V) -> Self
     where

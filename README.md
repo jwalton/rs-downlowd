@@ -1,20 +1,142 @@
 # file-downloader
 
-Downloading a file is easy. Just make an HTTP request, and write the results to a file, right? There's actually a lot more to consider. This library supports:
+Downloading a file is easy. Just make an HTTP request, and write the results to a file, right? There's actually a lot more to consider. `downlow` supports:
 
-- Streaming the file to disk, instead of downloading it to memory and then writing it to disk. Better for large files.
+- Streaming the file to disk, instead of downloading it to memory and then writing it to disk. This is both faster and far more memory efficient for large files.
 - Progress callback for displaying progress bar.
 - Resuming file downloads.
 - Files are written to disk as "filename.part" and then renamed to "filename" on completion, to make it obvious the file isn't complete.
-- Automatic retries for flakey network connections and servers.
+- Automatic retries for flakey network connections and servers, with exponential backoff.
 - Uses `content-disposition` header to retrieve the name of the file.
 - Support for bandwidth restrictions.
 
-## Running Tests
+## Documentation
 
-Integration tests rely on a local copy of nginx running. There's a docker-compose file you can use to easily set this up:
+See [the documentation at docs.rs](https://docs.rs/syn/latest/syn/).
 
-```sh
-cd ./test-support
-docker-compose up
+## Usage
+
+This is the simplest example:
+
+```rust
+# tokio_test::block_on(async {
+use downlow::Client;
+# use temp_dir::TempDir;
+# let dir = TempDir::new()?;
+# let dirname = dir.path();
+
+let client = Client::new();
+let result = client
+    .download("http://localhost:8089/hello.txt")
+    .destination(dirname)
+    .download()
+    .await?;
+
+assert_eq!(&result.path, &dirname.join("hello.txt"));
+let file_contents = tokio::fs::read_to_string(&result.path).await?;
+assert_eq!(file_contents, "hello world");
+# Ok::<(), Box<dyn std::error::Error>>(())
+# }).unwrap()
+```
+
+This is a short example, but it has a lot packed into it. This will write download the file `hello.txt` into the given directory. In this case, the filename is derived from the URL, but if the server responds to a HEAD request with a `Content-Disposition` header with a filename, we'll use that filename.  Note here we could also specify a filename instead of a directory name, and then `downlow` would write our file to the specified filename.
+
+While the file is being downloaded, it will be named `hello.txt.part`. The file will be renamed to `hello.txt`, and it's `mtime` set to the `Last-Modified` from the server once the download is complete. While the download is in progress, a "sidecar" file named `hello.txt.downloadinfo` will be written alongside the file which will contain cache information about the file (the etag header, the last-modified header, etc...). The sidecar file is used to help determine whether or not a file has changed on the server if the download is interrupted and needs to be resumed.
+
+If there's an error during the download, such as a network error, or the transfer is interrupted, or the server returns a 5xx error, then `downlow` will automatically retry the file, with an exponential backoff between retries. By default, `downlow` will retry at most five times, but will reset that counter if any progress is made downloading the file.
+
+### Reporting Progress
+
+There are a couple of ways you can hook into downlow to report on progress. The `on_progress` handler is called once at the start of the download, and then whenever bytes are downloaded.
+
+```rust
+# tokio_test::block_on(async {
+# use downlow::Client;
+# use temp_dir::TempDir;
+# let dir = TempDir::new()?;
+# let dirname = dir.path();
+
+let client = Client::new();
+let result = client
+    .download("http://localhost:8089/hello.txt")
+    .destination(dirname.join("file.txt"))
+    .on_progress(|progress| {
+        println!(
+            "Downloaded {} of {} bytes",
+            progress.bytes(),
+            progress.total_bytes().unwrap()
+        );
+    })
+    .download()
+    .await?;
+
+assert_eq!(&result.path, &dirname.join("file.txt"));
+# Ok::<(), Box<dyn std::error::Error>>(())
+# }).unwrap();
+```
+
+The progress handle can also be used to cancel a download via `progress.cancel()`. There's quite a bit of data about the download that can be retrieved from the progress handle.
+
+### Customizing Retries
+
+You can also use the `on_retry()` method to register a handler that will be run immediately prior to a retry. This can be used to customize the backoff, or cancel the download:
+
+```rust
+# tokio_test::block_on(async {
+# use std::time::Duration;
+# use temp_dir::TempDir;
+use downlow::{Client, Error};
+# let dir = TempDir::new()?;
+# let dirname = dir.path();
+
+let client = Client::new();
+let result = client
+    .download("http://localhost:8089/hello.txt")
+    .destination(dirname)
+    .on_retry(|r| {
+        if matches!(r.error(), Error::FileChanged { .. }) {
+            // No delay if the file changed.
+            r.set_delay(Duration::ZERO);
+        } else {
+            r.set_delay(downlow::exponential_backoff(
+                Duration::from_secs(1),
+                Duration::from_secs(30),
+                r.retries(),
+            ));
+        }
+    })
+    .download()
+    .await?;
+
+# Ok::<(), Box<dyn std::error::Error>>(())
+# }).unwrap();
+```
+
+Again, you can call `r.cancel()` here to not retry at all, and instead fail the entire download.
+
+### Client Options
+
+You can create a custom client using the `ClientBuilder`:
+
+```rust
+# tokio_test::block_on(async {
+use downlow::{ClientBuilder, Client};
+# use temp_dir::TempDir;
+# let dir = TempDir::new()?;
+# let dirname = dir.path();
+
+let client = ClientBuilder::new()
+    .user_agent("my-cool-app")
+    .header("Authorization", "Bearer secret-token")
+    .build()?;
+
+let result = client
+    .download("http://localhost:8089/hello.txt")
+    // Can set headers at the request level, too.
+    .header("x-my-custom-header", "canon")
+    .destination(dirname.join("file.txt"))
+    .download()
+    .await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+# }).unwrap()
 ```

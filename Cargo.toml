@@ -17,3 +17,4 @@ httptest = "0.16.3"
 rand = "0.9.2"
 temp-dir = "0.1.16"
 tokio = { version = "1.47.1", features = ["rt-multi-thread"] }
+tokio-test = "0.4.4"

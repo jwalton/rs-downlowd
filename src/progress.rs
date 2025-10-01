@@ -1,6 +1,6 @@
 // FIXME: Add a "progress struct" here.
 
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, time::SystemTime};
 
 use url::Url;
 
@@ -22,6 +22,10 @@ pub struct ProgressHandle {
     pub(crate) total_bytes: Option<u64>,
     /// True if the download has been cancelled.
     pub(crate) cancelled: bool,
+    /// The etag for the file, if known.
+    pub(crate) etag: Option<String>,
+    /// The last modified time for the file, if known.
+    pub(crate) last_modified: Option<SystemTime>,
 }
 
 /// A trait for reporting progress of a download.
@@ -83,7 +87,7 @@ impl ProgressHandle {
         self.bytes
     }
 
-    /// Returns the total number of bytes in the file, if known.
+    /// Returns the size of the file on the server, if known.
     pub fn total_bytes(&self) -> Option<u64> {
         self.total_bytes
     }
@@ -92,5 +96,15 @@ impl ProgressHandle {
     /// Any partially downloaded file will be left on disk.
     pub fn cancel(&mut self) {
         self.cancelled = true;
+    }
+
+    /// Return the etag for the file, if known.
+    pub fn etag(&self) -> Option<&str> {
+        self.etag.as_deref()
+    }
+
+    /// Return the last modified time for the file, if known.
+    pub fn last_modified(&self) -> Option<SystemTime> {
+        self.last_modified
     }
 }

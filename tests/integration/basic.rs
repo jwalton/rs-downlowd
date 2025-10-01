@@ -9,13 +9,19 @@ const MESSAGE: &str = "hello world";
 async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}/hello.txt");
     let dir = TempDir::new()?;
-    let destination = dir.path().join("my-file.txt");
+    let destination = dir.path();
+
+    let head = utils::head_url(&url).await;
 
     let client = Client::new();
     let result = client
         .download(&url)
-        .destination(&destination)
-        .on_progress(|progress| {
+        .destination(destination)
+        .on_progress(move |progress| {
+            assert_eq!(progress.etag().unwrap(), head.etag);
+            assert_eq!(progress.last_modified().unwrap(), head.last_modified.into());
+            assert_eq!(progress.total_bytes().unwrap(), head.content_length);
+
             println!(
                 "Downloaded {} of {} bytes",
                 progress.bytes(),
@@ -25,7 +31,7 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
         .download()
         .await?;
 
-    assert_eq!(&result.path, &destination);
+    assert_eq!(&result.path, &destination.join("hello.txt"));
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
     assert_eq!(file_contents, MESSAGE);
     assert_eq!(result.bytes_downloaded, MESSAGE.len() as u64);
