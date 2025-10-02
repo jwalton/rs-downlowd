@@ -1,4 +1,7 @@
-use std::path::Path;
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+};
 
 use downlow::Client;
 use temp_dir::TempDir;
@@ -21,7 +24,7 @@ async fn write_sidecar_file(
         contents.push_str(&format!("Etag: {etag}\n",));
     }
     if let Some(content_length) = content_length {
-        contents.push_str(&format!("Content-Length: {content_length}\n"));
+        contents.push_str(&format!("File-Length: {content_length}\n"));
     }
     tokio::fs::write(path, contents).await?;
     Ok(())
@@ -38,13 +41,27 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
     tokio::fs::write(&part_file, &MESSAGE[..5]).await?;
     let head = utils::head_url(&url).await;
 
+    let progress = Arc::new(Mutex::new(Vec::new()));
+
     let client = Client::new();
-    let result = client
-        .download(&url)
-        .last_modified(head.last_modified)
-        .destination(&destination)
-        .download()
-        .await?;
+    let result = {
+        let progress = progress.clone();
+        client
+            .download(&url)
+            .last_modified(head.last_modified)
+            .destination(&destination)
+            .on_progress(move |p| {
+                let mut progress = progress.lock().unwrap();
+                progress.push((p.bytes(), p.total_bytes()));
+            })
+            .download()
+            .await?
+    };
+
+    {
+        let progress_results = progress.lock().unwrap();
+        assert_eq!(*progress_results, &[(5, Some(11)), (11, Some(11))]);
+    }
 
     assert_eq!(&result.path, &destination);
 
@@ -211,7 +228,8 @@ async fn should_not_continue_a_file_with_wrong_last_modified()
 }
 
 #[tokio::test]
-async fn should_prefer_etag_over_last_modified() -> Result<(), Box<dyn std::error::Error>> {
+async fn should_redownload_if_etag_is_same_but_last_modified_has_changed()
+-> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
@@ -234,7 +252,7 @@ async fn should_prefer_etag_over_last_modified() -> Result<(), Box<dyn std::erro
     assert_eq!(file_contents, MESSAGE);
 
     // Verify we only downloaded the remaining bytes.
-    assert_eq!(result.bytes_downloaded, 6);
+    assert_eq!(result.bytes_downloaded, 11);
 
     Ok(())
 }

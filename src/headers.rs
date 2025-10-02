@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
-use reqwest::{Response, header::HeaderName};
+use http::HeaderName;
+use reqwest::Response;
 
 /// Retrieves a header value as a string slice.
 fn get_header_str<'a>(response: &'a Response, name: &HeaderName) -> Option<&'a str> {

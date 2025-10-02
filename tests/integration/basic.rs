@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use downlow::Client;
 use temp_dir::TempDir;
 
@@ -22,23 +24,30 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
 
     let head = utils::head_url(&url).await;
 
-    let client = Client::new();
-    let result = client
-        .download(&url)
-        .destination(destination)
-        .on_progress(move |progress| {
-            assert_eq!(progress.etag().unwrap(), head.etag);
-            assert_eq!(progress.last_modified().unwrap(), head.last_modified);
-            assert_eq!(progress.total_bytes().unwrap(), head.content_length);
+    let progress = Arc::new(Mutex::new(Vec::new()));
 
-            println!(
-                "Downloaded {} of {} bytes",
-                progress.bytes(),
-                progress.total_bytes().unwrap()
-            );
-        })
-        .download()
-        .await?;
+    let client = Client::new();
+    let result = {
+        let progress = progress.clone();
+        client
+            .download(&url)
+            .destination(destination)
+            .on_progress(move |p| {
+                assert_eq!(p.etag().unwrap(), head.etag);
+                assert_eq!(p.last_modified().unwrap(), head.last_modified);
+                assert_eq!(p.total_bytes().unwrap(), head.content_length);
+
+                let mut progress = progress.lock().unwrap();
+                progress.push((p.bytes(), p.total_bytes()));
+            })
+            .download()
+            .await?
+    };
+
+    {
+        let progress_results = progress.lock().unwrap();
+        assert_eq!(*progress_results, &[(0, Some(11)), (11, Some(11))]);
+    }
 
     assert_eq!(&result.path, &destination.join("hello.txt"));
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
