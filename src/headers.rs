@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use chrono::{DateTime, NaiveDateTime, Utc};
 use http::HeaderName;
 use reqwest::Response;
 
@@ -55,32 +54,6 @@ pub fn get_last_modified(response: &Response) -> Option<&str> {
     get_header_str(response, &reqwest::header::LAST_MODIFIED)
 }
 
-/// Parses a `Last-Modified` header value into a `DateTime<Utc>`.
-pub fn parse_last_modified(value: &str) -> Option<DateTime<Utc>> {
-    let value = value.trim();
-    parse_date_time_rfc2822(value)
-        .or_else(|| parse_date_time_rfc850(value))
-        .or_else(|| parse_date_time_ansi_c(value))
-}
-
-fn parse_date_time_rfc2822(s: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc2822(s)
-        .ok()
-        .map(|dt| dt.with_timezone(&Utc))
-}
-
-fn parse_date_time_rfc850(s: &str) -> Option<DateTime<Utc>> {
-    NaiveDateTime::parse_from_str(s, "%A, %d-%b-%y %H:%M:%S GMT")
-        .ok()
-        .and_then(|dt| dt.and_local_timezone(Utc).single())
-}
-
-fn parse_date_time_ansi_c(s: &str) -> Option<DateTime<Utc>> {
-    NaiveDateTime::parse_from_str(s, "%a %b %e %H:%M:%S %Y")
-        .ok()
-        .and_then(|dt| dt.and_local_timezone(Utc).single())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,21 +82,5 @@ mod tests {
             r#"attachment; filename="foo.txt"; filename*=UTF-8''file%20name.jpg"#,
         );
         assert_eq!(filename, Some("file name.jpg".into()));
-    }
-
-    #[test]
-    fn test_parse_last_modified() {
-        // Examples taken from [RFC9110](https://datatracker.ietf.org/doc/html/rfc9110#section-5.6.7).
-        let value = parse_last_modified("Sun, 06 Nov 1994 08:49:37 GMT");
-        assert_eq!(value.unwrap().to_rfc3339(), "1994-11-06T08:49:37+00:00");
-
-        let value = parse_last_modified("Sunday, 06-Nov-94 08:49:37 GMT");
-        assert_eq!(value.unwrap().to_rfc3339(), "1994-11-06T08:49:37+00:00");
-
-        let value = parse_last_modified("Sun Nov  6 08:49:37 1994");
-        assert_eq!(value.unwrap().to_rfc3339(), "1994-11-06T08:49:37+00:00");
-
-        let value = parse_last_modified("Some nonsense");
-        assert_eq!(value, None);
     }
 }

@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
 use crate::{Error, headers};
 
@@ -18,7 +18,11 @@ impl FileInfo {
     /// Create a FileInfo from a reqwest response.  local_file_size can be 0 if
     /// we are not resuming a download.
     pub fn from_reqwest_response(response: &reqwest::Response, local_file_size: u64) -> Self {
-        let local_file_size = if response.status().as_u16() == 206 { local_file_size } else { 0 };
+        let local_file_size = if response.status().as_u16() == 206 {
+            local_file_size
+        } else {
+            0
+        };
 
         FileInfo {
             // TODO: If the content-length header is missing, use the content-range header instead.
@@ -85,13 +89,7 @@ impl FileInfo {
 
     /// Load the FileInfo from a sidecar file, if it exists.
     pub async fn load(&mut self, sidecar_file: &Path) -> Result<(), Error> {
-        let contents = {
-            let sidecar_file = sidecar_file.to_owned();
-            tokio::task::spawn_blocking(move || fs::read_to_string(sidecar_file))
-                .await
-                .unwrap()
-        };
-
+        let contents = tokio::fs::read_to_string(sidecar_file).await;
         match contents {
             Ok(contents) => self.deserialize(&contents),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -105,18 +103,14 @@ impl FileInfo {
 
     /// Write the FileInfo to a sidecar file.
     pub async fn save(&self, sidecar_file: &Path) {
-        let serialized = self.serialize();
-        let sidecar_file = sidecar_file.to_owned();
-        let _ = tokio::task::spawn_blocking(move || fs::write(sidecar_file, serialized)).await;
+        let _ = tokio::fs::write(sidecar_file, self.serialize()).await;
     }
 
     pub async fn reset(&mut self, sidecar_file: &Path) {
         self.file_length = None;
         self.last_modified = None;
         self.etag = None;
-
-        let sidecar_file = sidecar_file.to_owned();
-        let _ = tokio::task::spawn_blocking(move || fs::remove_file(sidecar_file)).await;
+        let _ = tokio::fs::remove_file(sidecar_file).await;
     }
 
     /// When called on local file info, returns an error if the passed in remote file

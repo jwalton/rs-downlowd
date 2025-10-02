@@ -11,7 +11,6 @@ mod error;
 mod file_info;
 mod handles;
 mod headers;
-mod io_utils;
 mod utils;
 
 #[cfg(test)]
@@ -518,14 +517,17 @@ impl DownloadInner {
         self.part_file.flush().await.ok();
         drop(self.part_file);
 
-        // Rename the .part file to the final destination, and delete the sidecar file.
-        io_utils::finalize_download(
-            &self.part_filename,
-            &self.sidecar_filename,
-            &progress_data.destination,
-            progress_data.last_modified(),
-        )
-        .await?;
+        // Rename the .part file to the final file.
+        tokio::fs::rename(&self.part_filename, &progress_data.destination)
+            .await
+            .map_err(|e| Error::Write {
+                action: "renaming part file",
+                path: self.part_filename.to_path_buf(),
+                cause: e,
+            })?;
+
+        // Delete the sidecar file.
+        let _ = tokio::fs::remove_file(&self.sidecar_filename).await;
 
         Ok(DownloadResult {
             status: Status::Downloaded,
