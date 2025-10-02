@@ -1,0 +1,53 @@
+use std::{env, path::Path, process};
+
+use indicatif::ProgressBar;
+
+fn main() {
+    let progress = ProgressBar::no_length();
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let args: Vec<String> = env::args().collect();
+            if args.len() != 3 {
+                eprintln!("Usage: {} <url> <destination>", args[0]);
+                process::exit(1);
+            }
+
+            let url = &args[1];
+            let destination = Path::new(&args[2]);
+            let client = downlow::Client::new();
+            match client
+                .download(url)
+                .destination(destination)
+                .on_progress(move |p| {
+                    if let Some(total) = p.total_bytes() {
+                        progress.set_length(total);
+                        progress.set_style(
+                            indicatif::ProgressStyle::with_template(
+                                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})",
+                            )
+                            .unwrap()
+                            .progress_chars("#>-"),
+                        );
+                    }
+                    progress.set_position(p.bytes());
+                })
+                .download()
+                .await
+            {
+                Ok(result) => {
+                    println!(
+                        "Downloaded {} bytes to {:?}",
+                        result.bytes_downloaded, result.path
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Error downloading file: {e}");
+                    process::exit(1);
+                }
+            }
+        });
+}
