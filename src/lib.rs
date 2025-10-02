@@ -9,20 +9,15 @@ use std::{
 mod client;
 mod error;
 mod file_info;
+mod handles;
 mod headers;
-mod into_url;
 mod io_utils;
-mod progress;
-mod retry;
-mod time;
 mod utils;
 
 #[cfg(test)]
 mod tests;
 
-pub use error::Error;
 use http::Method;
-pub use progress::*;
 use reqwest::Response;
 use tokio::{fs::File, io::AsyncWriteExt};
 use url::Url;
@@ -30,35 +25,15 @@ use url::Url;
 use crate::file_info::FileInfo;
 
 pub use client::{Client, ClientBuilder};
+pub use error::Error;
+pub use handles::*;
 pub use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
-pub use into_url::IntoUrl;
-pub use retry::RetryHandle;
-pub use time::exponential_backoff;
-
-pub type RetryHandler = Box<dyn FnMut(&mut RetryHandle)>;
+pub use utils::backoff::exponential_backoff;
+pub use utils::into_url::IntoUrl;
 
 const DEFAULT_MAX_RETRIES: u64 = 5;
 const DEFAULT_MIN_DELAY: Duration = Duration::from_millis(500);
 const DEFAULT_MAX_DELAY: Duration = Duration::from_secs(10);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Status {
-    Downloaded,
-    Skipped,
-}
-
-fn default_retry_callback(handle: &mut RetryHandle) {
-    if matches!(handle.error(), Error::FileChanged { .. }) {
-        // No delay if the file changed.
-        handle.set_delay(Duration::ZERO);
-    } else {
-        handle.set_delay(exponential_backoff(
-            DEFAULT_MIN_DELAY,
-            DEFAULT_MAX_DELAY,
-            handle.retries(),
-        ));
-    }
-}
 
 /// Represents a file about to be downloaded.
 pub struct Download {
@@ -72,6 +47,8 @@ pub struct Download {
     headers: HeaderMap,
     /// Information we've been given about the remote file.
     user_provided_remote_file_info: FileInfo,
+    /// The name of the remote file, if we've worked it out already.
+    remote_file_name: Option<String>,
     /// The file size of the remote file, if we work it out before downloading.
     /// This will only get filled in if we need to do a HEAD request to work out
     /// the filename.
@@ -96,9 +73,6 @@ struct DownloadInner {
     client: reqwest::Client,
     /// Headers to include in the request.
     headers: HeaderMap,
-    /// Information we know about the remote file, either from the user, from
-    /// the sidecar file, or if we're fetching the file from scratch, from the server.
-    remote_file_info: FileInfo,
     /// The maximum number of times we can consecutively retry without making any progress.
     max_retries: u64,
     /// Progress callback, if any.
@@ -111,16 +85,20 @@ struct DownloadInner {
     sidecar_filename: PathBuf,
     /// File we're writing to.
     part_file: File,
-    /// Current size of the local file.
-    local_file_size: u64,
 }
 
-#[derive(Debug, Clone)]
-pub struct DownloadResult {
-    pub status: Status,
-    pub tries: u64,
-    pub path: PathBuf,
-    pub bytes_downloaded: u64,
+/// Default callback used for determining backoff delay between retries.
+fn default_retry_callback(handle: &mut RetryHandle) {
+    if matches!(handle.error(), Error::FileChanged { .. }) {
+        // No delay if the file changed.
+        handle.set_delay(Duration::ZERO);
+    } else {
+        handle.set_delay(exponential_backoff(
+            DEFAULT_MIN_DELAY,
+            DEFAULT_MAX_DELAY,
+            handle.retries(),
+        ));
+    }
 }
 
 impl Download {
@@ -146,6 +124,7 @@ impl Download {
             progress_handler: None,
             retry_handler: Box::new(default_retry_callback),
             headers: HeaderMap::new(),
+            remote_file_name: None,
             remote_file_length: None,
             err,
         }
@@ -174,7 +153,7 @@ impl Download {
 
     /// Add a set of Headers to the existing ones on this `Download`.
     /// The headers will be merged in to any already set.
-    pub fn appeheadersnd_headers(mut self, headers: HeaderMap) -> Self {
+    pub fn headers(mut self, headers: HeaderMap) -> Self {
         utils::http::append_all_headers(&mut self.headers, headers);
         self
     }
@@ -218,15 +197,13 @@ impl Download {
     ///
     /// This can also be used to abort the download on a retry by calling `r.cancel()`:
     ///
-    /// ```no_run
+    /// ```
     /// # use std::time::Duration;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let client = downlow::Client::new();
-    ///     let result = client.download("https://example.com/i_do_not_exist.txt")
+    ///     let result = client.download("http://localhost:8089/i_do_not_exist.txt")
     ///        .destination("file.txt")
-    ///        .on_retry(|r| {
-    ///           r.cancel();
-    ///         })
+    ///        .on_retry(|r| r.cancel())
     ///        .download()
     ///        .await;
     ///
@@ -281,6 +258,62 @@ impl Download {
         self
     }
 
+    /// Returns the filename that downlow will use when downloading the file.
+    /// This is determined by making a HEAD request to the server, and looking
+    /// at the `Content-Disposition` header, if present, or falling back to the
+    /// last part of the URL path.
+    pub async fn get_remote_file_name(&mut self) -> String {
+        if let Some(name) = &self.remote_file_name {
+            return name.clone();
+        }
+
+        let (u, head) = request(
+            &self.client,
+            reqwest::Method::HEAD,
+            self.url.clone(),
+            self.headers.clone(),
+        )
+        .await;
+
+        // If we followed a redirect, take note of this, so we don't have to follow
+        // it again.
+        if u.is_some() {
+            self.updated_url = u;
+        }
+
+        // This is the URL we actually downloaded from.
+        let url = self.updated_url.as_ref().unwrap_or(&self.url);
+
+        // Get the filename from the server.
+        let filename = head
+            .ok()
+            .and_then(|head| {
+                if head.status().is_success() {
+                    // While we're here, see if we can work out the file length.
+                    self.remote_file_length = headers::parse_content_length(&head);
+
+                    // Work out the filename from the Content-Disposition header, if present.
+                    headers::parse_content_disposition(&head).map(Cow::<str>::into_owned)
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                let url_filename = url.path().split('/').next_back().unwrap();
+                if url_filename.is_empty() {
+                    None
+                } else {
+                    Some(url_filename.to_owned())
+                }
+            })
+            .unwrap_or("file".to_string());
+
+        // Cache this so we don't need to get it again.
+        self.remote_file_name = Some(filename.clone());
+
+        filename
+    }
+
     /// This causes the file to actually be downloaded.
     pub async fn download(mut self) -> Result<DownloadResult, Error> {
         if let Some(e) = self.err {
@@ -290,29 +323,15 @@ impl Download {
         // Work out where we're ultimately going to save the file.
         let destination = self.resolve_destination().await?;
 
-        // Check to see if the `destination` already exists and, if so, if
-        // it's the correct length.
         // TODO: Allow forcing the download if the file already exists.
-        let destination_metadata = tokio::fs::metadata(&destination).await.ok();
-        if let Some(metadata) = destination_metadata {
-            let remote_file_length = match self.remote_file_length {
-                Some(v) => Some(v),
-                None => {
-                    self.get_remote_file_length(self.url.clone(), self.headers.clone())
-                        .await
-                }
-            };
-            if let Some(remote_length) = remote_file_length {
-                if metadata.len() == remote_length {
-                    // File already exists and is the correct length - nothing to do.
-                    return Ok(DownloadResult {
-                        status: Status::Skipped,
-                        tries: 0,
-                        path: destination,
-                        bytes_downloaded: 0,
-                    });
-                }
-            }
+        if self.should_skip(&destination).await {
+            // File already exists and is the correct length - nothing to do.
+            return Ok(DownloadResult {
+                status: Status::Skipped,
+                tries: 0,
+                path: destination,
+                bytes_downloaded: 0,
+            });
         }
 
         // This is a temporary file we'll write while we're downloading.
@@ -321,132 +340,107 @@ impl Download {
         // And this is a "sidecar" file where we'll store info about the file (the etag, the last modified, etc...)
         let sidecar_filename = utils::file::add_extension(&destination, "downloadinfo");
 
+        // Use information provided by the user, or load from the sidecar file if it exists.
         let mut remote_file_info = self.user_provided_remote_file_info;
-        if remote_file_info.etag.is_some() || remote_file_info.last_modified.is_some() {
-            // User provided some info about the file - use it.
-        } else {
-            // See if there's a sidecar file with info about the file.
-            let contents = tokio::fs::read_to_string(&sidecar_filename).await.ok();
-            if let Some(contents) = contents {
-                remote_file_info.deserialize(&contents).ok();
-            }
+        if remote_file_info.etag.is_none() && remote_file_info.last_modified.is_none() {
+            // User didn't tell us anything...
+            let _ = remote_file_info.load(&sidecar_filename).await;
         }
 
-        let (part_file, local_file_size) =
-            utils::file::open_file_for_writing_async(&part_filename).await?;
+        // Open the part file for writing.
+        let mut part_file = utils::file::open_file_for_writing_async(&part_filename).await?;
+        let file_length =
+            utils::file::get_file_length_async(&mut part_file, &part_filename).await?;
 
+        // This is the single instance of `ProgressHandle` that we'll update
+        // and pass to the progress handler throughout the download.
         let progress_data = ProgressHandle {
             original_url: self.url,
             updated_url: self.updated_url,
             destination,
             tries: 0,
             bytes_transferred: 0,
-            bytes: local_file_size,
-            total_bytes: remote_file_info.content_length,
-            etag: remote_file_info.etag.clone(),
-            last_modified: remote_file_info.last_modified.clone(),
+            bytes: file_length,
+            remote_file_info,
             cancelled: false,
         };
 
         let inner = DownloadInner {
             client: self.client,
             headers: self.headers,
-            remote_file_info,
             max_retries: self.max_retries,
             progress_handler: self.progress_handler,
             retry_handler: self.retry_handler,
             part_filename,
             sidecar_filename,
             part_file,
-            local_file_size,
         };
 
         inner.download(progress_data).await
     }
 
-    async fn get_remote_file_length(&mut self, url: Url, headers: HeaderMap) -> Option<u64> {
-        let (url, head) = request(&self.client, Method::HEAD, url, headers).await;
-        if url.is_some() {
-            // Update the URL we fetched from.
-            self.updated_url = url;
-        }
-        match head {
-            Ok(head) => {
-                if head.status().is_success() {
-                    headers::parse_content_length(&head)
-                } else {
-                    None
-                }
+    /// Returns true if the local file exists and is the same length as the remote file.
+    async fn should_skip(&mut self, destination: &Path) -> bool {
+        let local_length = tokio::fs::metadata(&destination)
+            .await
+            .ok()
+            .map(|m| m.len());
+
+        if let Some(local_length) = local_length {
+            if let Some(remote_length) = self.get_remote_file_length().await {
+                return local_length == remote_length;
             }
-            Err(_) => None,
+        }
+
+        false
+    }
+
+    async fn get_remote_file_length(&mut self) -> Option<u64> {
+        match self.remote_file_length {
+            Some(v) => Some(v),
+            None => {
+                let (url, head) = request(
+                    &self.client,
+                    Method::HEAD,
+                    self.url.clone(),
+                    self.headers.clone(),
+                )
+                .await;
+
+                if url.is_some() {
+                    // Update the URL we fetched from.
+                    self.updated_url = url;
+                }
+
+                head.ok().and_then(|head| {
+                    if head.status().is_success() {
+                        headers::parse_content_length(&head)
+                    } else {
+                        None
+                    }
+                })
+            }
         }
     }
 
     /// Returns the final destination path for the download.
     async fn resolve_destination(&mut self) -> Result<PathBuf, Error> {
         let mut destination = match &self.destination {
-            Some(path) => Cow::Borrowed(path.as_path()),
-            None => {
-                let cwd = std::env::current_dir().map_err(|e| Error::Write {
-                    action: "determining current directory",
-                    path: PathBuf::from("."),
-                    cause: e,
-                })?;
-                Cow::Owned(cwd)
-            }
+            Some(path) => path.as_path().to_owned(),
+            None => std::env::current_dir().map_err(|e| Error::Write {
+                action: "determining current directory",
+                path: PathBuf::from("."),
+                cause: e,
+            })?,
         };
-
-        let is_dir = tokio::fs::metadata(destination.as_ref())
-            .await
-            .map(|m| m.is_dir())
-            .unwrap_or(false);
 
         // If the destination is a directory, figure out the filename for the file.
-        if is_dir {
-            let (u, head) = request(
-                &self.client,
-                reqwest::Method::HEAD,
-                self.url.clone(),
-                self.headers.clone(),
-            )
-            .await;
-            if u.is_some() {
-                self.updated_url = u;
-            }
-
-            let url = self.updated_url.as_ref().unwrap_or(&self.url);
-
-            // Need to get the filename from the server.
-            let filename = match &head {
-                Ok(head) => {
-                    if head.status().is_success() {
-                        // While we're here, see if we can work out the file length.
-                        self.remote_file_length = headers::parse_content_length(head);
-
-                        // Work out the filename from the Content-Disposition header, if present.
-                        headers::parse_content_disposition(head)
-                    } else {
-                        None
-                    }
-                }
-                Err(_) => None,
-            };
-
-            let filename = filename
-                .or_else(|| {
-                    let url_filename = url.path().split('/').next_back().unwrap();
-                    if url_filename.is_empty() {
-                        None
-                    } else {
-                        Some(Cow::Borrowed(url_filename))
-                    }
-                })
-                .unwrap_or(Cow::Borrowed("file"));
-
-            destination = Cow::Owned(destination.as_ref().join(filename.as_ref()));
+        if utils::file::is_dir_async(&destination).await {
+            let filename = self.get_remote_file_name().await;
+            destination = destination.join(filename);
         };
 
-        Ok(destination.into_owned())
+        Ok(destination)
     }
 }
 
@@ -478,16 +472,19 @@ impl DownloadInner {
                             return Err(e);
                         }
 
-                        let mut delay = time::exponential_backoff(
-                            DEFAULT_MIN_DELAY,
-                            DEFAULT_MAX_DELAY,
-                            retries,
-                        );
+                        let mut delay =
+                            exponential_backoff(DEFAULT_MIN_DELAY, DEFAULT_MAX_DELAY, retries);
 
                         if matches!(e, Error::FileChanged { .. }) {
                             // The file has changed on the server - we need to start again.
-                            self.truncate().await?;
-                            self.remote_file_info
+                            utils::file::truncate_file_async(
+                                &self.part_filename,
+                                &mut self.part_file,
+                            )
+                            .await?;
+                            progress_data.bytes = 0;
+                            progress_data
+                                .remote_file_info
                                 .update(&self.sidecar_filename, None, None, None)
                                 .await;
                             delay = Duration::from_secs(0);
@@ -519,7 +516,7 @@ impl DownloadInner {
             &self.part_filename,
             &self.sidecar_filename,
             &progress_data.destination,
-            self.remote_file_info.last_modified.as_deref(),
+            progress_data.last_modified(),
         )
         .await?;
 
@@ -548,21 +545,25 @@ impl DownloadInner {
             // If we're trying to append to an existing file, but the file has changed on
             // the server, then error.  This SHOULD never happen, thanks to the `If-Range`
             // header we sent, but some servers are not well behaved.
-            self.validate_file_unchanged(last_modified, etag, content_length)?;
+            progress_data.remote_file_info.verify_unchanged(
+                content_length,
+                last_modified,
+                etag,
+                progress_data.bytes,
+            )?;
         } else {
             // If we're not resuming, then update our info about the remote file.
-            self.remote_file_info
+            progress_data
+                .remote_file_info
                 .update(&self.sidecar_filename, content_length, last_modified, etag)
                 .await;
-            progress_data.etag = self.remote_file_info.etag.clone();
-            progress_data.last_modified = self.remote_file_info.last_modified.clone();
-            progress_data.total_bytes = self.remote_file_info.content_length;
         }
 
         // Copy data from the response to the .part file.
         let result = self
             .copy_response_to_file(progress_data, response, append)
             .await;
+
         // Flush the file to ensure all data is written before we return.
         let _ = self.part_file.flush().await;
         result?;
@@ -570,58 +571,16 @@ impl DownloadInner {
         Ok(())
     }
 
-    fn validate_file_unchanged(
-        &mut self,
-        last_modified: Option<&str>,
-        etag: Option<&str>,
-        content_length: Option<u64>,
-    ) -> Result<(), Error> {
-        if self.remote_file_info.etag.is_some() && etag.is_some() {
-            if self.remote_file_info.etag.as_deref() != etag {
-                return Err(Error::FileChanged {
-                    description: "etag changed",
-                });
-            }
-        } else {
-            // Only check last-modified if we don't have an etag.  If the modified
-            // time has changed, but the etag is the same, assume the file hasn't
-            // actually changed.
-            if self.remote_file_info.last_modified.is_some()
-                && last_modified.is_some()
-                && self.remote_file_info.last_modified.as_deref() != last_modified
-            {
-                return Err(Error::FileChanged {
-                    description: "last modified time changed",
-                });
-            }
-        }
-
-        // TODO: If the content-length header is missing, use the content-range header instead.
-        if let (Some(remote_length), Some(content_length)) =
-            (self.remote_file_info.content_length, content_length)
-        {
-            let final_length = self.local_file_size + content_length;
-            if remote_length != final_length {
-                return Err(Error::FileChanged {
-                    description: "file size changed",
-                });
-            }
-        }
-
-        Ok(())
-    }
-
     /// Work out the range headers to use to resume the download.
-    fn add_resume_download_headers(&self, headers: &mut HeaderMap) {
-        let local_file_size = self.local_file_size;
-        let last_modified = self.remote_file_info.last_modified.as_deref();
-        let etag = self.remote_file_info.etag.as_deref();
+    fn add_resume_download_headers(&self, progress: &ProgressHandle, headers: &mut HeaderMap) {
+        if progress.bytes > 0 {
+            let last_modified = progress.remote_file_info.last_modified.as_deref();
+            let etag = progress.remote_file_info.etag.as_deref();
 
-        if local_file_size > 0 {
             if let Some(if_range) = etag.or(last_modified) {
                 headers.insert(
                     "Range",
-                    HeaderValue::from_str(&format!("bytes={local_file_size}-")).unwrap(),
+                    HeaderValue::from_str(&format!("bytes={}-", progress.bytes)).unwrap(),
                 );
                 headers.insert("If-Range", HeaderValue::from_str(if_range).unwrap());
             }
@@ -631,19 +590,13 @@ impl DownloadInner {
     /// Send a GET request for the file.
     async fn get_file(&mut self, progress_data: &mut ProgressHandle) -> Result<Response, Error> {
         let mut headers = self.headers.clone();
-        self.add_resume_download_headers(&mut headers);
+        self.add_resume_download_headers(progress_data, &mut headers);
         let url = progress_data.url();
         let (u, response) = request(&self.client, reqwest::Method::GET, url.clone(), headers).await;
         if u.is_some() {
             progress_data.updated_url = u
         }
         response
-    }
-
-    async fn truncate(&mut self) -> Result<(), Error> {
-        utils::file::truncate_file_async(&self.part_filename, &mut self.part_file).await?;
-        self.local_file_size = 0;
-        Ok(())
     }
 
     /// Stream data from the response to a file, and call into the progress callback as we go.
@@ -656,15 +609,15 @@ impl DownloadInner {
     ) -> Result<u64, Error> {
         let mut bytes_downloaded = 0;
         if !append {
-            self.truncate().await?;
+            utils::file::truncate_file_async(&self.part_filename, &mut self.part_file).await?;
+            progress_data.bytes = 0;
         }
-        let initial_size = self.local_file_size;
+        let initial_size = progress_data.bytes;
 
-        progress_data.bytes = self.local_file_size;
-        progress_data.total_bytes = response
+        progress_data.remote_file_info.content_length = response
             .content_length()
             .map(|v| v + initial_size)
-            .or(self.remote_file_info.content_length);
+            .or(progress_data.remote_file_info.content_length);
 
         // Initial call into the progress callback.
         notify(&mut self.progress_handler, progress_data)?;
@@ -691,9 +644,8 @@ impl DownloadInner {
 
             let chunk_size = chunk.len() as u64;
             bytes_downloaded += chunk_size;
-            self.local_file_size += chunk_size;
+            progress_data.bytes += chunk_size;
             progress_data.bytes_transferred += chunk_size;
-            progress_data.bytes = self.local_file_size;
             notify(&mut self.progress_handler, progress_data)?;
         }
 

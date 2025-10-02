@@ -6,6 +6,15 @@ use crate::integration::{constants::SERVER_URL, utils};
 const MESSAGE: &str = "hello world";
 
 #[tokio::test]
+async fn should_get_the_name_of_the_file() -> Result<(), Box<dyn std::error::Error>> {
+    let url = format!("{SERVER_URL}/hello.txt");
+
+    let mut download = Client::new().download(&url);
+    assert_eq!(&download.get_remote_file_name().await, "hello.txt");
+    Ok(())
+}
+
+#[tokio::test]
 async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}/hello.txt");
     let dir = TempDir::new()?;

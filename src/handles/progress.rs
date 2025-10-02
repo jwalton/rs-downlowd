@@ -18,14 +18,11 @@ pub struct ProgressHandle {
     pub(crate) bytes_transferred: u64,
     /// The size of the local file on disk, including any bytes downloaded.
     pub(crate) bytes: u64,
-    /// Total bytes in the file, if known.
-    pub(crate) total_bytes: Option<u64>,
+    /// Information we know about the remote file, either from the user, from
+    /// the sidecar file, or if we're fetching the file from scratch, from the server.
+    pub(crate) remote_file_info: crate::FileInfo,
     /// True if the download has been cancelled.
     pub(crate) cancelled: bool,
-    /// The etag for the file, if known.
-    pub(crate) etag: Option<String>,
-    /// The last modified time for the file, if known.
-    pub(crate) last_modified: Option<String>,
 }
 
 /// A trait for reporting progress of a download.
@@ -89,7 +86,7 @@ impl ProgressHandle {
 
     /// Returns the size of the file on the server, if known.
     pub fn total_bytes(&self) -> Option<u64> {
-        self.total_bytes
+        self.remote_file_info.content_length
     }
 
     /// Cancel this download. This will cause the download to stop immedaitely.
@@ -100,11 +97,11 @@ impl ProgressHandle {
 
     /// Return the etag for the file, if known.
     pub fn etag(&self) -> Option<&str> {
-        self.etag.as_deref()
+        self.remote_file_info.etag.as_deref()
     }
 
     /// Return the last modified time for the file, if known.
     pub fn last_modified(&self) -> Option<&str> {
-        self.last_modified.as_deref()
+        self.remote_file_info.last_modified.as_deref()
     }
 }

@@ -66,6 +66,66 @@ impl FileInfo {
         Ok(())
     }
 
+    pub async fn load(&mut self, sidecar_file: &Path) -> Result<(), Error> {
+        let contents = {
+            let sidecar_file = sidecar_file.to_owned();
+            tokio::task::spawn_blocking(move || fs::read_to_string(sidecar_file))
+                .await
+                .unwrap()
+        };
+
+        match contents {
+            Ok(contents) => self.deserialize(&contents),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(Error::Write {
+                action: "reading sidecar file",
+                cause: e,
+                path: sidecar_file.to_path_buf(),
+            }),
+        }
+    }
+
+    /// Returns an error the file has changed based on the provided headers.
+    pub fn verify_unchanged(
+        &self,
+        content_length: Option<u64>,
+        last_modified: Option<&str>,
+        etag: Option<&str>,
+        local_file_size: u64,
+    ) -> Result<(), Error> {
+        if self.etag.is_some() && etag.is_some() {
+            if self.etag.as_deref() != etag {
+                return Err(Error::FileChanged {
+                    description: "etag changed",
+                });
+            }
+        } else {
+            // Only check last-modified if we don't have an etag.  If the modified
+            // time has changed, but the etag is the same, assume the file hasn't
+            // actually changed.
+            if self.last_modified.is_some()
+                && last_modified.is_some()
+                && self.last_modified.as_deref() != last_modified
+            {
+                return Err(Error::FileChanged {
+                    description: "last modified time changed",
+                });
+            }
+        }
+
+        // TODO: If the content-length header is missing, use the content-range header instead.
+        if let (Some(remote_length), Some(content_length)) = (self.content_length, content_length) {
+            let final_length = local_file_size + content_length;
+            if remote_length != final_length {
+                return Err(Error::FileChanged {
+                    description: "file size changed",
+                });
+            }
+        }
+
+        Ok(())
+    }
+
     /// Update the file info if anything has changed, and persist to disk.
     pub async fn update(
         &mut self,

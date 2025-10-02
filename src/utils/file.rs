@@ -29,7 +29,7 @@ pub fn add_extension(path: &Path, extension: &str) -> PathBuf {
 /// Open the destination file for writing.  If the file already exists, this will
 /// open the file for appending and return the current length of the file.
 ///
-pub fn open_file_for_writing(part_file: &Path) -> Result<(std::fs::File, u64), Error> {
+pub fn open_file_for_writing(part_file: &Path) -> Result<std::fs::File, Error> {
     // Make sure the parent directory exists.
     if let Some(parent) = part_file.parent() {
         std::fs::create_dir_all(parent).map_err(|e| Error::Write {
@@ -49,23 +49,33 @@ pub fn open_file_for_writing(part_file: &Path) -> Result<(std::fs::File, u64), E
             cause: e,
         })?;
 
-    let metadata = file.metadata().map_err(|e| Error::Write {
+    Ok(file)
+}
+
+pub async fn open_file_for_writing_async(part_file: &Path) -> Result<tokio::fs::File, Error> {
+    let part_file = part_file.to_owned();
+    let file = tokio::task::spawn_blocking(move || open_file_for_writing(&part_file))
+        .await
+        .unwrap()?;
+    Ok(tokio::fs::File::from_std(file))
+}
+
+/// Returns true if the path exists and is a directory.
+pub async fn is_dir_async(path: &Path) -> bool {
+    tokio::fs::metadata(path)
+        .await
+        .map(|m| m.is_dir())
+        .unwrap_or(false)
+}
+
+pub async fn get_file_length_async(file: &mut tokio::fs::File, path: &Path) -> Result<u64, Error> {
+    let metadata = file.metadata().await.map_err(|e| Error::Write {
         action: "getting file metadata",
-        path: part_file.to_path_buf(),
+        path: path.to_path_buf(),
         cause: e,
     })?;
 
-    Ok((file, metadata.len()))
-}
-
-pub async fn open_file_for_writing_async(
-    part_file: &Path,
-) -> Result<(tokio::fs::File, u64), Error> {
-    let part_file = part_file.to_owned();
-    let (file, len) = tokio::task::spawn_blocking(move || open_file_for_writing(&part_file))
-        .await
-        .unwrap()?;
-    Ok((tokio::fs::File::from_std(file), len))
+    Ok(metadata.len())
 }
 
 /// Truncate the file to zero length and seek to the start.

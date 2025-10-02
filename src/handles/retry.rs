@@ -1,3 +1,4 @@
+pub type RetryHandler = Box<dyn FnMut(&mut RetryHandle)>;
 
 /// Handle passed to the `on_retry` callback.
 pub struct RetryHandle {
