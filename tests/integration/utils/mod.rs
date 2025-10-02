@@ -2,6 +2,9 @@ use std::{io::Write, sync::OnceLock};
 
 use rand::Fill;
 
+mod progress_recorder;
+pub use progress_recorder::*;
+
 pub struct HeadData {
     pub last_modified: String,
     pub etag: String,

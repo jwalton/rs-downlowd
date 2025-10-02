@@ -1,12 +1,12 @@
-use std::{
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::path::Path;
 
 use downlow::Client;
 use temp_dir::TempDir;
 
-use crate::integration::{constants::SERVER_URL, utils};
+use crate::integration::{
+    constants::SERVER_URL,
+    utils::{self, ProgressRecord, ProgressRecorder},
+};
 
 const MESSAGE: &str = "hello world";
 
@@ -41,26 +41,34 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
     tokio::fs::write(&part_file, &MESSAGE[..5]).await?;
     let head = utils::head_url(&url).await;
 
-    let progress = Arc::new(Mutex::new(Vec::new()));
+    let recorder = ProgressRecorder::new();
 
     let client = Client::new();
     let result = {
-        let progress = progress.clone();
+        let recorder = recorder.clone();
         client
             .download(&url)
             .last_modified(head.last_modified)
             .destination(&destination)
-            .on_progress(move |p| {
-                let mut progress = progress.lock().unwrap();
-                progress.push((p.bytes(), p.total_bytes()));
-            })
+            .on_progress(recorder.on_progress())
             .download()
             .await?
     };
 
     {
-        let progress_results = progress.lock().unwrap();
-        assert_eq!(*progress_results, &[(5, Some(11)), (11, Some(11))]);
+        assert_eq!(
+            recorder.records(),
+            &[
+                ProgressRecord {
+                    bytes: 5,
+                    total_bytes: Some(11)
+                },
+                ProgressRecord {
+                    bytes: 11,
+                    total_bytes: Some(11)
+                }
+            ]
+        );
     }
 
     assert_eq!(&result.path, &destination);

@@ -70,14 +70,6 @@ impl ProgressHandle {
         self.tries
     }
 
-    /// Return the actual number of bytes actually transfered so far.  If we are resuming
-    /// a partial download, this will be less than the value returned by `bytes()`.
-    /// If the file changes on the server and we have to restart the download,
-    /// this could end up being greater than `total_bytes()`.
-    pub fn bytes_transferred(&self) -> u64 {
-        self.bytes_transferred
-    }
-
     /// Returns the size of the local file on disk, including any bytes downloaded
     /// in a previous partial download.
     pub fn bytes(&self) -> u64 {

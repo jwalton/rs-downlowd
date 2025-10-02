@@ -1,9 +1,10 @@
-use std::sync::{Arc, Mutex};
-
 use downlow::Client;
 use temp_dir::TempDir;
 
-use crate::integration::{constants::SERVER_URL, utils};
+use crate::integration::{
+    constants::SERVER_URL,
+    utils::{self, ProgressRecord, ProgressRecorder},
+};
 
 const MESSAGE: &str = "hello world";
 
@@ -24,11 +25,11 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
 
     let head = utils::head_url(&url).await;
 
-    let progress = Arc::new(Mutex::new(Vec::new()));
+    let recorder = ProgressRecorder::new();
 
     let client = Client::new();
     let result = {
-        let progress = progress.clone();
+        let recorder = recorder.clone();
         client
             .download(&url)
             .destination(destination)
@@ -37,17 +38,25 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
                 assert_eq!(p.last_modified().unwrap(), head.last_modified);
                 assert_eq!(p.total_bytes().unwrap(), head.content_length);
 
-                let mut progress = progress.lock().unwrap();
-                progress.push((p.bytes(), p.total_bytes()));
+                recorder.record_progress(p);
             })
             .download()
             .await?
     };
 
-    {
-        let progress_results = progress.lock().unwrap();
-        assert_eq!(*progress_results, &[(0, Some(11)), (11, Some(11))]);
-    }
+    assert_eq!(
+        recorder.records(),
+        &[
+            ProgressRecord {
+                bytes: 0,
+                total_bytes: Some(11)
+            },
+            ProgressRecord {
+                bytes: 11,
+                total_bytes: Some(11)
+            }
+        ]
+    );
 
     assert_eq!(&result.path, &destination.join("hello.txt"));
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
@@ -79,7 +88,6 @@ async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::err
         .download()
         .await?;
 
-    assert_eq!(result.status, downlow::Status::Skipped);
     assert_eq!(&result.path, &destination);
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
     assert_eq!(file_contents, MESSAGE);
@@ -103,7 +111,6 @@ async fn should_not_skip_a_file_if_the_size_is_wrong() -> Result<(), Box<dyn std
         .download()
         .await?;
 
-    assert_eq!(result.status, downlow::Status::Downloaded);
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
     assert_eq!(file_contents, MESSAGE);
 
@@ -170,7 +177,6 @@ async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::
         .download()
         .await?;
 
-    assert_eq!(result.status, downlow::Status::Downloaded);
     assert_eq!(&result.path, &destination);
     let file_size = tokio::fs::metadata(&destination).await?.len();
     assert_eq!(file_size, 10 * 1024 * 1024);

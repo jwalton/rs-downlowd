@@ -1,4 +1,4 @@
-# file-downloader
+# downlow
 
 Downloading a file is easy. Just make an HTTP request, and write the results to a file, right? There's actually a lot more to consider. `downlow` supports:
 
@@ -39,9 +39,9 @@ assert_eq!(file_contents, "hello world");
 # }).unwrap()
 ```
 
-This is a short example, but it has a lot packed into it. This will write download the file `hello.txt` into the given directory. In this case, the filename is derived from the URL, but if the server responds to a HEAD request with a `Content-Disposition` header with a filename, we'll use that filename.  Note here we could also specify a filename instead of a directory name, and then `downlow` would write our file to the specified filename.
+This is a short example, but it has a lot packed into it. First, since we've passed in a directory as the `destination`, this will work out what filename the file should be saved as In this case, the filename is derived from the URL, but if the server responds to a HEAD request with a `Content-Disposition` header with a filename, we'll use that filename.  Note here we could also specify a filename instead of a directory name, and then `downlow` would write our file to the specified filename.
 
-While the file is being downloaded, it will be named `hello.txt.part`. The file will be renamed to `hello.txt`, and it's `mtime` set to the `Last-Modified` from the server once the download is complete. While the download is in progress, a "sidecar" file named `hello.txt.downloadinfo` will be written alongside the file which will contain cache information about the file (the etag header, the last-modified header, etc...). The sidecar file is used to help determine whether or not a file has changed on the server if the download is interrupted and needs to be resumed.
+If the file already exists, and has the correct length, then `downlow` will just report success right away!  If not, then we'll start downloading the file into a file named `hello.txt.part`. The file will be renamed to `hello.txt` once the download is complete. While the download is in progress, a "sidecar" file named `hello.txt.downloadinfo` will be written alongside the file which will contain cache information about the file (the etag header, the last-modified header, etc...). The sidecar file is used to help determine whether or not a file has changed on the server if the download is interrupted and needs to be resumed.
 
 If there's an error during the download, such as a network error, or the transfer is interrupted, or the server returns a 5xx error, then `downlow` will automatically retry the file, with an exponential backoff between retries. By default, `downlow` will retry at most five times, but will reset that counter if any progress is made downloading the file.
 

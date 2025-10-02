@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+mod backoff;
 mod client;
 mod error;
 mod file_info;
@@ -27,7 +28,7 @@ pub use client::{Client, ClientBuilder};
 pub use error::Error;
 pub use handles::*;
 pub use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
-pub use utils::backoff::exponential_backoff;
+pub use backoff::exponential_backoff;
 pub use utils::into_url::IntoUrl;
 
 const DEFAULT_MAX_RETRIES: u64 = 5;
@@ -322,7 +323,6 @@ impl Download {
         if self.should_skip(&destination).await {
             // File already exists and is the correct length - nothing to do.
             return Ok(DownloadResult {
-                status: Status::Skipped,
                 tries: 0,
                 path: destination,
                 bytes_downloaded: 0,
@@ -530,7 +530,6 @@ impl DownloadInner {
         let _ = tokio::fs::remove_file(&self.sidecar_filename).await;
 
         Ok(DownloadResult {
-            status: Status::Downloaded,
             tries: progress_data.tries,
             path: progress_data.destination,
             bytes_downloaded: progress_data.bytes_transferred,
