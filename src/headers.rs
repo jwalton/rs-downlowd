@@ -21,12 +21,12 @@ fn parse_content_length_str(value: &str) -> Option<u64> {
 }
 
 /// Parses the filename from the `Content-Disposition` header.
-pub fn parse_content_disposition(response: &Response) -> Option<Cow<str>> {
+pub fn parse_content_disposition(response: &'_ Response) -> Option<Cow<'_, str>> {
     get_header_str(response, &reqwest::header::CONTENT_DISPOSITION)
         .and_then(parse_content_disposition_str)
 }
 
-fn parse_content_disposition_str(value: &str) -> Option<Cow<str>> {
+fn parse_content_disposition_str(value: &'_ str) -> Option<Cow<'_, str>> {
     let mut result: Option<Cow<str>> = None;
 
     value.split(';').for_each(|part| {

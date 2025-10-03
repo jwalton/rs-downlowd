@@ -24,11 +24,11 @@ use url::Url;
 
 use crate::file_info::FileInfo;
 
+pub use backoff::exponential_backoff;
 pub use client::{Client, ClientBuilder};
 pub use error::Error;
 pub use handles::*;
 pub use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
-pub use backoff::exponential_backoff;
 pub use utils::into_url::IntoUrl;
 
 const DEFAULT_MAX_RETRIES: u64 = 5;

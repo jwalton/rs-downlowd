@@ -172,13 +172,11 @@ impl FileInfo {
 
         if let (Some(local_length), Some(remote_length)) =
             (self.file_length, remote_file_info.file_length)
-        {
-            if local_length != remote_length {
+            && local_length != remote_length {
                 return Err(Error::FileChanged {
                     description: "file size changed",
                 });
             }
-        }
 
         Ok(())
     }
