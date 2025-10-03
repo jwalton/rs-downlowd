@@ -144,7 +144,7 @@ async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}{}", utils::big_file_url());
+    let url = format!("{SERVER_URL}{}", utils::big_file_url(10 * 1024 * 1024));
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
     let part_file = dir.path().join("my-file.bin.part");

@@ -3,6 +3,7 @@
 use std::{
     borrow::Cow,
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 
@@ -12,6 +13,7 @@ mod error;
 mod file_info;
 mod handles;
 mod headers;
+mod limiter;
 mod utils;
 
 #[cfg(test)]
@@ -22,7 +24,7 @@ use reqwest::Response;
 use tokio::{fs::File, io::AsyncWriteExt};
 use url::Url;
 
-use crate::file_info::FileInfo;
+use crate::{file_info::FileInfo, limiter::TokioLimiter};
 
 pub use backoff::exponential_backoff;
 pub use client::{Client, ClientBuilder};
@@ -39,42 +41,46 @@ const DEFAULT_MAX_DELAY: Duration = Duration::from_secs(10);
 pub struct Download {
     /// The client to use to download the file.
     client: reqwest::Client,
+    /// Rate limiter.
+    limiter: Arc<TokioLimiter>,
     /// The URL we want to download from.
     url: Url,
-    /// If we are redirected, this is the URL we were redirected to.
-    updated_url: Option<Url>,
     /// Headers to include in the request.
     headers: HeaderMap,
     /// Information we've been given about the remote file.
     user_provided_local_file_info: FileInfo,
-    /// The name of the remote file, which will be filled in if we HEAD the file.
-    remote_file_name: Option<String>,
-    /// Information about the remote file, which will be filled in if we HEAD the file.
-    remote_file_info: Option<FileInfo>,
     /// The configured destination for the file, if any.  This could be a directory
     /// or an actual file.
     destination: Option<PathBuf>,
     /// The maximum number of times we will consecutively retry without making progress.
     max_retries: u64,
     /// The callback to call to report progress.
-    progress_handler: Option<Box<dyn Progress>>,
+    progress_handler: Option<Box<dyn Progress + Send>>,
     /// The handler to call when we retry a download.
     retry_handler: RetryHandler,
+
     /// If there are any errors while configuring the download, we store them here,
     /// so we can return them when we actually try to start the download.
     err: Option<Error>,
-    // TODO: Rate limiting
+    /// If we are redirected, this is the URL we were redirected to.
+    updated_url: Option<Url>,
+    /// The name of the remote file, which will be filled in if we HEAD the file.
+    remote_file_name: Option<String>,
+    /// Information about the remote file, which will be filled in if we HEAD the file.
+    remote_file_info: Option<FileInfo>,
 }
 
 struct DownloadInner {
     /// The client to use to download the file.
     client: reqwest::Client,
+    /// Rate limiter.
+    limiter: Arc<TokioLimiter>,
     /// Headers to include in the request.
     headers: HeaderMap,
     /// The maximum number of times we can consecutively retry without making any progress.
     max_retries: u64,
     /// Progress callback, if any.
-    progress_handler: Option<Box<dyn Progress>>,
+    progress_handler: Option<Box<dyn Progress + Send>>,
     /// The handler to call when we retry a download.
     retry_handler: RetryHandler,
     /// Temporary file we'll write while we're downloading (e.g. "file.txt.part")
@@ -101,7 +107,7 @@ fn default_retry_callback(handle: &mut RetryHandle) {
 
 impl Download {
     /// Create a new download for the given URL.
-    fn create(client: reqwest::Client, url: impl IntoUrl) -> Self {
+    fn create(client: reqwest::Client, limiter: Arc<TokioLimiter>, url: impl IntoUrl) -> Self {
         let (url, err) = match url.into_url() {
             Ok(u) => (u, None),
             Err(e) => (
@@ -114,17 +120,19 @@ impl Download {
 
         Download {
             client,
+            limiter,
             url,
-            updated_url: None,
+            headers: HeaderMap::new(),
             user_provided_local_file_info: FileInfo::default(),
             destination: None,
             max_retries: DEFAULT_MAX_RETRIES,
             progress_handler: None,
             retry_handler: Box::new(default_retry_callback),
-            headers: HeaderMap::new(),
+
+            err,
+            updated_url: None,
             remote_file_name: None,
             remote_file_info: None,
-            err,
         }
     }
 
@@ -158,7 +166,7 @@ impl Download {
 
     /// Set the progress reporter for this download.  The given reporter will
     /// be called periodically as data is downloaded.
-    pub fn on_progress(mut self, progress: impl FnMut(&mut ProgressHandle) + 'static) -> Self {
+    pub fn on_progress(mut self, progress: impl FnMut(&mut ProgressHandle) + Send + 'static) -> Self {
         self.progress_handler = Some(Box::new(progress));
         self
     }
@@ -210,7 +218,7 @@ impl Download {
     /// # }
     /// ```
     ///
-    pub fn on_retry(mut self, retry: impl FnMut(&mut RetryHandle) + 'static) -> Self {
+    pub fn on_retry(mut self, retry: impl FnMut(&mut RetryHandle) + Send + 'static) -> Self {
         self.retry_handler = Box::new(retry);
         self
     }
@@ -362,6 +370,7 @@ impl Download {
 
         let inner = DownloadInner {
             client: self.client,
+            limiter: self.limiter,
             headers: self.headers,
             max_retries: self.max_retries,
             progress_handler: self.progress_handler,
@@ -381,10 +390,10 @@ impl Download {
             .ok()
             .map(|m| m.len());
 
-        if let Some(local_length) = local_length {
-            if let Some(remote_length) = self.get_remote_file_length().await {
-                return local_length == remote_length;
-            }
+        if let Some(local_length) = local_length
+            && let Some(remote_length) = self.get_remote_file_length().await
+        {
+            return local_length == remote_length;
         }
 
         false
@@ -618,16 +627,13 @@ impl DownloadInner {
         // Initial call into the progress callback.
         notify(&mut self.progress_handler, progress_data)?;
 
-        loop {
-            let chunk_result = response.chunk().await.map_err(|cause| Error::Network {
-                during: "read",
-                url: progress_data.url().to_string(),
-                cause,
-            })?;
-            let chunk = match chunk_result {
-                Some(c) => c,
-                None => break, // EOF
-            };
+        while let Some(chunk) = response.chunk().await.map_err(|cause| Error::Network {
+            during: "read",
+            url: progress_data.url().to_string(),
+            cause,
+        })? {
+            // Let the rate limiter know we downloaded some bytes.
+            self.limiter.bytes_consumed(chunk.len() as u64).await;
 
             self.part_file
                 .write_all(&chunk)
@@ -709,7 +715,7 @@ async fn request(
 }
 
 fn notify(
-    progress: &mut Option<Box<dyn Progress>>,
+    progress: &mut Option<Box<dyn Progress + Send>>,
     progress_data: &mut ProgressHandle,
 ) -> Result<(), Error> {
     if let Some(progress) = progress.as_mut() {

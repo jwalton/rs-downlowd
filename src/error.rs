@@ -5,6 +5,10 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
+    #[error("Invalid configuration: {message}")]
+    #[non_exhaustive]
+    InvalidConfig { message: String },
+
     #[error("Invalid URL: {cause}")]
     #[non_exhaustive]
     InvalidUrl { cause: String },
@@ -54,7 +58,8 @@ impl Error {
                 // 400 errors are not retryable.
                 *status < 400 || *status >= 500
             }
-            Error::InvalidUrl { .. }
+            Error::InvalidConfig { .. }
+            | Error::InvalidUrl { .. }
             | Error::InvalidHeader { .. }
             | Error::Write { .. }
             | Error::BadRedirect { .. }

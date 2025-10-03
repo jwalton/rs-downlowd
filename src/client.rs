@@ -1,17 +1,25 @@
+use std::sync::Arc;
+
 use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
 
-use crate::{Download, Error, IntoUrl, utils};
+use crate::{Download, Error, IntoUrl, limiter::TokioLimiter, utils};
 
 /// Builder for creating a `Client` with custom configuration.
 pub struct ClientBuilder {
     user_agent: String,
     headers: HeaderMap,
+    max_bytes_per_second: Option<u64>,
     err: Option<Error>,
 }
 
-/// A client for downloading files over HTTP.
+/// A client for downloading files over HTTP.  A `Client` uses an internal
+/// connection pool to manage HTTP connections, and has a shared rate limiter,
+/// so it is recommended to create a single `Client` and reuse it for multiple
+/// downloads.  Clients are cheap to clone.
+#[derive(Clone)]
 pub struct Client {
     client: reqwest::Client,
+    limiter: Arc<TokioLimiter>,
 }
 
 impl ClientBuilder {
@@ -20,6 +28,7 @@ impl ClientBuilder {
         ClientBuilder {
             user_agent: "downlow/1.0".to_string(),
             headers: HeaderMap::new(),
+            max_bytes_per_second: None,
             err: None,
         }
     }
@@ -57,6 +66,19 @@ impl ClientBuilder {
         self
     }
 
+    /// Set the maximum bytes per second that can be downloaded. This limit is
+    /// shared across all downloads using this client.
+    pub fn max_bytes_per_second(mut self, max: u64) -> Self {
+        if max == 0 {
+            self.err = Some(Error::InvalidConfig {
+                message: "max_bytes_per_second must be greater than 0".to_string(),
+            });
+        } else {
+            self.max_bytes_per_second = Some(max);
+        }
+        self
+    }
+
     /// Build the client.
     pub fn build(self) -> Result<Client, Error> {
         if let Some(e) = self.err {
@@ -68,7 +90,10 @@ impl ClientBuilder {
             .default_headers(self.headers)
             .build()
             .expect("Failed to create HTTP client");
-        Ok(Client { client })
+
+        let limiter = Arc::new(TokioLimiter::new(self.max_bytes_per_second));
+
+        Ok(Client { client, limiter })
     }
 }
 
@@ -76,6 +101,11 @@ impl Client {
     /// Create a new client.
     pub fn new() -> Self {
         ClientBuilder::default().build().unwrap()
+    }
+
+    /// Build a new client.
+    pub fn builder() -> ClientBuilder {
+        ClientBuilder::new()
     }
 
     /// Create a file download.
@@ -94,7 +124,14 @@ impl Client {
     /// ```
     ///
     pub fn download(&self, url: impl IntoUrl) -> Download {
-        Download::create(self.client.clone(), url)
+        Download::create(self.client.clone(), self.limiter.clone(), url)
+    }
+
+    /// Update the maximum bytes per second that can be downloaded. This limit
+    /// is shared across all downloads using this client. Setting this to `None`
+    /// removes any rate limit.
+    pub async fn max_bytes_per_second(&self, max_bytes_per_second: Option<u64>) {
+        self.limiter.set_max_bytes_per_second(max_bytes_per_second).await;
     }
 }
 

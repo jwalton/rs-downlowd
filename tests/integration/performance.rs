@@ -12,13 +12,13 @@ const ITERATIONS: u32 = 100;
 async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
+    let url = format!("{SERVER_URL}{}", utils::big_file_url(10 * 1024 * 1024));
 
     // This is the "naive" approach where we download the whole file into memory
     // using reqwest, then write it to disk.
     let start = SystemTime::now();
     for _ in 0..ITERATIONS {
         let _ = fs::remove_file(&destination).await;
-        let url = format!("{SERVER_URL}{}", utils::big_file_url());
         let response = reqwest::get(&url).await?;
         let bytes = response.bytes().await?;
         tokio::fs::write(&destination, &bytes).await?;
@@ -31,7 +31,6 @@ async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
     let start = SystemTime::now();
     for _ in 0..ITERATIONS {
         let _ = fs::remove_file(&destination).await;
-        let url = format!("{SERVER_URL}{}", utils::big_file_url());
         client
             .download(&url)
             .destination(&destination)
