@@ -1,4 +1,6 @@
-use std::{collections::HashMap, io::Write, sync::{Mutex, OnceLock}};
+use std::{
+    collections::HashMap, io::Write, path::PathBuf, sync::{Mutex, OnceLock}
+};
 
 use rand::Fill;
 
@@ -9,6 +11,12 @@ pub struct HeadData {
     pub last_modified: String,
     pub etag: String,
     pub content_length: u64,
+}
+
+#[derive(Clone)]
+pub struct BigFile {
+    pub path: PathBuf,
+    pub url: String,
 }
 
 pub async fn head_url(url: &str) -> HeadData {
@@ -47,16 +55,14 @@ pub async fn head_url(url: &str) -> HeadData {
     }
 }
 
-static FILES: OnceLock<Mutex<HashMap<usize, String>>> = OnceLock::new();
+static FILES: OnceLock<Mutex<HashMap<usize, BigFile>>> = OnceLock::new();
 
-/// Returns the URL path to a file of a specific size for testing purposes.
-/// The file is created on first use in the `test-support/static` directory.
-pub fn big_file_url(size: usize) -> String {
+fn big_file(size: usize) -> BigFile {
     let file_map = FILES.get_or_init(|| Mutex::new(HashMap::new()));
 
     let mut map = file_map.lock().unwrap();
-    if let Some(path) = map.get(&size) {
-        return path.clone();
+    if let Some(bf) = map.get(&size) {
+        return bf.clone();
     }
 
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -81,7 +87,22 @@ pub fn big_file_url(size: usize) -> String {
         }
     }
 
-    let url = format!("/big-file-{size}.bin");
-    map.insert(size, url.clone());
-    url
+    let result = BigFile {
+        path,
+        url: format!("/big-file-{size}.bin"),
+    };
+    map.insert(size, result.clone());
+    result
+}
+
+/// Returns the URL path to a file of a specific size for testing purposes.
+/// The file is created on first use in the `test-support/static` directory.
+pub fn big_file_url(size: usize) -> String {
+    big_file(size).url
+}
+
+/// Return the path on the file system to a big file of the specified size.
+/// This will be the same file as returned by `big_file_url`.
+pub fn big_file_path(size: usize) -> PathBuf {
+    big_file(size).path
 }

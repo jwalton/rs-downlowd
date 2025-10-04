@@ -3,6 +3,7 @@ mod utils;
 
 // Tests
 mod basic;
-mod resume;
-mod performance;
+mod fuzz;
 mod limiter;
+mod performance;
+mod resume;
