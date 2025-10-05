@@ -39,6 +39,57 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
+async fn should_set_the_user_agent_in_client() -> Result<(), Box<dyn std::error::Error>> {
+    let message = "hello world";
+    let dir = TempDir::new()?;
+    let server = Server::run();
+
+    server.expect(
+        Expectation::matching(httptest::all_of![
+            request::method_path("GET", "/file.txt"),
+            request::headers(contains(("user-agent", "test1"))),
+        ])
+            .respond_with(responders::status_code(200).body(message)),
+    );
+
+    let client = Client::builder().user_agent("test1").build()?;
+    let result = client
+        .download(server.url("/file.txt"))
+        .destination(dir.path().join("my-file.txt"))
+        .download()
+        .await?;
+
+    assert_eq!(result.bytes_downloaded, 11);
+    Ok(())
+}
+
+#[tokio::test]
+async fn should_set_the_user_agent_for_a_single_download() -> Result<(), Box<dyn std::error::Error>> {
+    let message = "hello world";
+    let dir = TempDir::new()?;
+    let server = Server::run();
+
+    server.expect(
+        Expectation::matching(httptest::all_of![
+            request::method_path("GET", "/file.txt"),
+            request::headers(contains(("user-agent", "test2"))),
+        ])
+            .respond_with(responders::status_code(200).body(message)),
+    );
+
+    let client = Client::builder().user_agent("test1").build()?;
+    let result = client
+        .download(server.url("/file.txt"))
+        .user_agent("test2")
+        .destination(dir.path().join("my-file.txt"))
+        .download()
+        .await?;
+
+    assert_eq!(result.bytes_downloaded, 11);
+    Ok(())
+}
+
+#[tokio::test]
 async fn should_follow_redirects() -> Result<(), Box<dyn std::error::Error>> {
     let message = "hello world";
 
@@ -97,7 +148,7 @@ async fn should_not_follow_redirect_loop() -> Result<(), Box<dyn std::error::Err
     let destination = dir.path().join("my-file.txt");
     let result = client
         .download(url)
-        .max_retries(100)
+        .max_retries(Some(100))
         .destination(destination)
         .download()
         .await;
@@ -138,7 +189,7 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
     tokio::fs::write(&part_file, &message[..5]).await?;
 
     let result = client
-        .download(&url)
+        .download(url)
         .destination(destination)
         .etag("test-etag")
         .download()

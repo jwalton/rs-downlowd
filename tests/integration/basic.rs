@@ -1,4 +1,5 @@
 use downlow::Client;
+use http::HeaderMap;
 use temp_dir::TempDir;
 
 use crate::integration::{
@@ -180,6 +181,31 @@ async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::
     assert_eq!(&result.path, &destination);
     let file_size = tokio::fs::metadata(&destination).await?.len();
     assert_eq!(file_size, 10 * 1024 * 1024);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::error::Error>> {
+    let url = format!("{SERVER_URL}/hello.txt");
+
+    let client = Client::builder()
+        .user_agent("my-user-agent/1.0")
+        .header("key", "value")
+        .headers(HeaderMap::new())
+        .max_retries(Some(10))
+        .max_bytes_per_second(Some(1024 * 1024))
+        .build()?;
+
+    // Update the client settings.
+    client.max_bytes_per_second(Some(1024 * 1024)).await;
+
+    let _download = client
+        .download(url)
+        .user_agent("my-user-agent-2/1.0")
+        .header("key", "new-value")
+        .headers(HeaderMap::new())
+        .max_retries(Some(20));
 
     Ok(())
 }

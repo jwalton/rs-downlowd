@@ -4,10 +4,13 @@ use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
 
 use crate::{Download, Error, IntoUrl, limiter::TokioLimiter, utils};
 
+const DEFAULT_MAX_RETRIES: u64 = 5;
+
 /// Builder for creating a `Client` with custom configuration.
 pub struct ClientBuilder {
     user_agent: String,
     headers: HeaderMap,
+    default_max_retries: Option<u64>,
     max_bytes_per_second: Option<u64>,
     err: Option<Error>,
 }
@@ -19,6 +22,7 @@ pub struct ClientBuilder {
 #[derive(Clone)]
 pub struct Client {
     client: reqwest::Client,
+    default_max_retries: Option<u64>,
     limiter: Arc<TokioLimiter>,
 }
 
@@ -28,6 +32,7 @@ impl ClientBuilder {
         ClientBuilder {
             user_agent: "downlow/1.0".to_string(),
             headers: HeaderMap::new(),
+            default_max_retries: Some(DEFAULT_MAX_RETRIES),
             max_bytes_per_second: None,
             err: None,
         }
@@ -66,15 +71,24 @@ impl ClientBuilder {
         self
     }
 
+    /// Set the default maxmimum number of times to consecutively retry a download
+    /// without making any progress. The default is 5. This counter resets whenever
+    /// at least one byte of data is downloaded from the server. Pass in `None`
+    /// to retry forever.
+    pub fn max_retries(mut self, max_retries: Option<u64>) -> Self {
+        self.default_max_retries = max_retries;
+        self
+    }
+
     /// Set the maximum bytes per second that can be downloaded. This limit is
     /// shared across all downloads using this client.
-    pub fn max_bytes_per_second(mut self, max: u64) -> Self {
-        if max == 0 {
+    pub fn max_bytes_per_second(mut self, max: Option<u64>) -> Self {
+        if max == Some(0) {
             self.err = Some(Error::InvalidConfig {
                 message: "max_bytes_per_second must be greater than 0".to_string(),
             });
         } else {
-            self.max_bytes_per_second = Some(max);
+            self.max_bytes_per_second = max;
         }
         self
     }
@@ -93,7 +107,11 @@ impl ClientBuilder {
 
         let limiter = Arc::new(TokioLimiter::new(self.max_bytes_per_second));
 
-        Ok(Client { client, limiter })
+        Ok(Client {
+            client,
+            default_max_retries: self.default_max_retries,
+            limiter,
+        })
     }
 }
 
@@ -124,14 +142,21 @@ impl Client {
     /// ```
     ///
     pub fn download(&self, url: impl IntoUrl) -> Download {
-        Download::create(self.client.clone(), self.limiter.clone(), url)
+        Download::create(
+            self.client.clone(),
+            self.default_max_retries,
+            self.limiter.clone(),
+            url,
+        )
     }
 
     /// Update the maximum bytes per second that can be downloaded. This limit
     /// is shared across all downloads using this client. Setting this to `None`
     /// removes any rate limit.
     pub async fn max_bytes_per_second(&self, max_bytes_per_second: Option<u64>) {
-        self.limiter.set_max_bytes_per_second(max_bytes_per_second).await;
+        self.limiter
+            .set_max_bytes_per_second(max_bytes_per_second)
+            .await;
     }
 }
 

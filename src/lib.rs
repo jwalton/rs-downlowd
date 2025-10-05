@@ -33,9 +33,8 @@ pub use handles::*;
 pub use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
 pub use utils::into_url::IntoUrl;
 
-const DEFAULT_MAX_RETRIES: u64 = 5;
-const DEFAULT_MIN_DELAY: Duration = Duration::from_millis(500);
-const DEFAULT_MAX_DELAY: Duration = Duration::from_secs(10);
+const DEFAULT_MIN_DELAY: Duration = Duration::from_secs(1);
+const DEFAULT_MAX_DELAY: Duration = Duration::from_secs(120);
 
 /// Represents a file about to be downloaded.
 pub struct Download {
@@ -47,17 +46,17 @@ pub struct Download {
     url: Url,
     /// Headers to include in the request.
     headers: HeaderMap,
-    /// Information we've been given about the remote file.
-    user_provided_local_file_info: FileInfo,
     /// The configured destination for the file, if any.  This could be a directory
     /// or an actual file.
     destination: Option<PathBuf>,
     /// The maximum number of times we will consecutively retry without making progress.
-    max_retries: u64,
+    max_retries: Option<u64>,
     /// The callback to call to report progress.
     progress_handler: Option<Box<dyn Progress + Send>>,
     /// The handler to call when we retry a download.
     retry_handler: RetryHandler,
+    /// Information we've been given about the remote file.
+    user_provided_local_file_info: FileInfo,
 
     /// If there are any errors while configuring the download, we store them here,
     /// so we can return them when we actually try to start the download.
@@ -78,7 +77,7 @@ struct DownloadInner {
     /// Headers to include in the request.
     headers: HeaderMap,
     /// The maximum number of times we can consecutively retry without making any progress.
-    max_retries: u64,
+    max_retries: Option<u64>,
     /// Progress callback, if any.
     progress_handler: Option<Box<dyn Progress + Send>>,
     /// The handler to call when we retry a download.
@@ -107,7 +106,12 @@ fn default_retry_callback(handle: &mut RetryHandle) {
 
 impl Download {
     /// Create a new download for the given URL.
-    fn create(client: reqwest::Client, limiter: Arc<TokioLimiter>, url: impl IntoUrl) -> Self {
+    fn create(
+        client: reqwest::Client,
+        max_retries: Option<u64>,
+        limiter: Arc<TokioLimiter>,
+        url: impl IntoUrl,
+    ) -> Self {
         let (url, err) = match url.into_url() {
             Ok(u) => (u, None),
             Err(e) => (
@@ -123,11 +127,11 @@ impl Download {
             limiter,
             url,
             headers: HeaderMap::new(),
-            user_provided_local_file_info: FileInfo::default(),
             destination: None,
-            max_retries: DEFAULT_MAX_RETRIES,
+            max_retries,
             progress_handler: None,
             retry_handler: Box::new(default_retry_callback),
+            user_provided_local_file_info: FileInfo::default(),
 
             err,
             updated_url: None,
@@ -136,7 +140,12 @@ impl Download {
         }
     }
 
-    /// Add a header to this `Download`.
+    /// Set the user agent for this download.
+    pub fn user_agent(self, user_agent: impl Into<String>) -> Self {
+        self.header(http::header::USER_AGENT, user_agent.into())
+    }
+
+    /// Add a header to this download.
     pub fn header<K, V>(mut self, key: K, value: V) -> Self
     where
         K: IntoHeaderName,
@@ -157,16 +166,26 @@ impl Download {
         self
     }
 
-    /// Add a set of Headers to the existing ones on this `Download`.
+    /// Add a set of Headers to the existing ones on this download.
     /// The headers will be merged in to any already set.
     pub fn headers(mut self, headers: HeaderMap) -> Self {
         utils::http::append_all_headers(&mut self.headers, headers);
         self
     }
 
+    /// Override the the maxmimum number of times to consecutively retry the
+    /// download without making any progress. Pass in `None` to retry forever.
+    pub fn max_retries(mut self, max_retries: Option<u64>) -> Self {
+        self.max_retries = max_retries;
+        self
+    }
+
     /// Set the progress reporter for this download.  The given reporter will
     /// be called periodically as data is downloaded.
-    pub fn on_progress(mut self, progress: impl FnMut(&mut ProgressHandle) + Send + 'static) -> Self {
+    pub fn on_progress(
+        mut self,
+        progress: impl FnMut(&mut ProgressHandle) + Send + 'static,
+    ) -> Self {
         self.progress_handler = Some(Box::new(progress));
         self
     }
@@ -189,8 +208,8 @@ impl Download {
     ///               r.set_delay(Duration::ZERO);
     ///           } else {
     ///               r.set_delay(downlow::exponential_backoff(
-    ///                   Duration::from_millis(500),
-    ///                   Duration::from_secs(10),
+    ///                   Duration::from_secs(5),
+    ///                   Duration::from_secs(120),
     ///                   r.retries(),
     ///               ));
     ///           }
@@ -253,14 +272,6 @@ impl Download {
     /// file on disk will be used in place of the last modified time.
     pub fn last_modified(mut self, last_modified: impl Into<String>) -> Self {
         self.user_provided_local_file_info.last_modified = Some(last_modified.into());
-        self
-    }
-
-    /// Set the maxmimum number of times we will consecutively retry without making
-    /// any progress. The default is 5. This counter resets if we download at
-    /// least one byte of data from the server.
-    pub fn max_retries(mut self, max_retries: u64) -> Self {
-        self.max_retries = max_retries;
         self
     }
 
@@ -343,7 +354,7 @@ impl Download {
         // And this is a "sidecar" file where we'll store info about the file (the etag, the last modified, etc...)
         let sidecar_filename = utils::file::add_extension(&destination, "downloadinfo");
 
-        // Use information provided by the user, or load from the sidecar file if it exists.
+        // Use information provided by the user, or else load from the sidecar file if it exists.
         let mut local_file_info = self.user_provided_local_file_info;
         if local_file_info.etag.is_none() && local_file_info.last_modified.is_none() {
             // User didn't tell us anything...
@@ -364,6 +375,7 @@ impl Download {
             tries: 0,
             bytes_transferred: 0,
             bytes: file_length,
+            bytes_delta: 0,
             local_file_info,
             cancelled: false,
         };
@@ -481,7 +493,9 @@ impl DownloadInner {
                         if progress_data.bytes_transferred > bytes_before {
                             // We made some progress - reset the retry counter.
                             retries = 0;
-                        } else if retries > self.max_retries {
+                        } else if let Some(max_retries) = self.max_retries
+                            && retries > max_retries
+                        {
                             return Err(e);
                         }
 
@@ -646,6 +660,7 @@ impl DownloadInner {
 
             let chunk_size = chunk.len() as u64;
             bytes_downloaded += chunk_size;
+            progress_data.bytes_delta = chunk_size;
             progress_data.bytes += chunk_size;
             progress_data.bytes_transferred += chunk_size;
             notify(&mut self.progress_handler, progress_data)?;

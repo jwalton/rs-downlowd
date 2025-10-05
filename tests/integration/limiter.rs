@@ -17,7 +17,7 @@ async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>>
 
     // Download the file with a rate limit.
     let client = Client::builder()
-        .max_bytes_per_second(limit)
+        .max_bytes_per_second(Some(limit))
         .build()
         .unwrap();
     let start = SystemTime::now();
@@ -50,7 +50,7 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
 
     // Download the file with a rate limit.
     let client = Client::builder()
-        .max_bytes_per_second(limit)
+        .max_bytes_per_second(Some(limit))
         .build()
         .unwrap();
     let start = SystemTime::now();
@@ -84,7 +84,7 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
 }
 
 #[tokio::test]
-async fn should_remove_download_speed_partway_through() -> Result<(), Box<dyn std::error::Error>> {
+async fn should_allow_removing_download_speed_partway_through() -> Result<(), Box<dyn std::error::Error>> {
     let file_size = 10 * 1024 * 1024; // 10 MB.
     let limit = 1024; // Stupid slow.
 
@@ -94,7 +94,7 @@ async fn should_remove_download_speed_partway_through() -> Result<(), Box<dyn st
 
     // Download the file with a rate limit.
     let client = Client::builder()
-        .max_bytes_per_second(limit)
+        .max_bytes_per_second(Some(limit))
         .build()
         .unwrap();
     let start = SystemTime::now();

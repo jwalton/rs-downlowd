@@ -1,4 +1,10 @@
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 use downlow::Client;
 use temp_dir::TempDir;
@@ -16,14 +22,22 @@ async fn should_work_when_cancelled() -> Result<(), Box<dyn std::error::Error>> 
 
     // Download the file with a rate limit.
     let client = Client::builder()
-        .max_bytes_per_second(1024 * 1024) // 1 MB/s
+        .max_bytes_per_second(Some(1024 * 1024)) // 1 MB/s
         .build()
         .unwrap();
 
+    let bytes_downloaded = Arc::new(AtomicU64::new(0));
     let mut attempts = 0;
     loop {
         attempts += 1;
-        let fut = client.download(&url).destination(&destination).download();
+        let bytes_downloaded = bytes_downloaded.clone();
+        let fut = client
+            .download(&url)
+            .destination(&destination)
+            .on_progress(move |p| {
+                bytes_downloaded.fetch_add(p.delta(), Ordering::SeqCst);
+            })
+            .download();
         let result = tokio::time::timeout(Duration::from_millis(100), fut).await;
 
         if result.is_ok() {
@@ -31,13 +45,21 @@ async fn should_work_when_cancelled() -> Result<(), Box<dyn std::error::Error>> 
         }
     }
 
-    println!("Completed download after {attempts} attempts");
+    println!(
+        "Completed download after {attempts} attempts: {} bytes downloaded",
+        bytes_downloaded.load(Ordering::SeqCst)
+    );
 
     // Make sure the file we downloaded is correct.
     let big_file = utils::big_file_path(file_size);
     let expected_contents = tokio::fs::read(&big_file).await?;
     let actual_contents = tokio::fs::read(&destination).await?;
     assert_eq!(expected_contents, actual_contents);
+    assert_eq!(actual_contents.len(), file_size);
+    assert_eq!(
+        actual_contents.len() as u64,
+        bytes_downloaded.load(Ordering::SeqCst)
+    );
 
     Ok(())
 }

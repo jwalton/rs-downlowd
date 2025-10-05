@@ -18,6 +18,9 @@ pub struct ProgressHandle {
     pub(crate) bytes_transferred: u64,
     /// The size of the local file on disk, including any bytes downloaded.
     pub(crate) bytes: u64,
+    /// The number of bytes transferred since the last time the progress
+    /// handler was called.
+    pub(crate) bytes_delta: u64,
     /// Cached information about the local file, either from reading the sidecar
     /// file, or fetched from the server.
     pub(crate) local_file_info: crate::FileInfo,
@@ -68,6 +71,12 @@ impl ProgressHandle {
     /// so this number may be higher than the maximum number of retries allowed.
     pub fn tries(&self) -> u64 {
         self.tries
+    }
+
+    /// Returns the number of bytes transferred since the last time the progress
+    /// handler was called.
+    pub fn delta(&self) -> u64 {
+        self.bytes_delta
     }
 
     /// Returns the size of the local file on disk, including any bytes downloaded
