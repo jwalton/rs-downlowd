@@ -1,4 +1,26 @@
-use http::{HeaderMap, HeaderName};
+use http::{HeaderMap, HeaderName, HeaderValue, header::IntoHeaderName};
+
+use crate::Error;
+
+pub fn append_header<K, V>(headers: &mut HeaderMap, key: K, value: V) -> Result<(), Error>
+where
+    K: IntoHeaderName,
+    HeaderValue: TryFrom<V>,
+    <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+{
+    match value.try_into() {
+        Ok(v) => {
+            headers.append(key, v);
+        }
+        Err(e) => {
+            return Err(Error::InvalidHeader {
+                cause: e.into().to_string(),
+            });
+        }
+    };
+
+    Ok(())
+}
 
 pub fn append_all_headers<T>(headers: &mut HeaderMap<T>, new_headers: HeaderMap<T>) {
     let mut key = HeaderName::from_static("x-placeholder");

@@ -9,6 +9,7 @@ use std::{
 
 mod backoff;
 mod client;
+mod destination;
 mod error;
 mod file_info;
 mod handles;
@@ -24,7 +25,10 @@ use reqwest::Response;
 use tokio::{fs::File, io::AsyncWriteExt};
 use url::Url;
 
-use crate::{file_info::FileInfo, limiter::TokioLimiter};
+use crate::{
+    destination::Destination, file_info::FileInfo, limiter::TokioLimiter,
+    utils::http::append_header,
+};
 
 pub use backoff::exponential_backoff;
 pub use client::{Client, ClientBuilder};
@@ -82,10 +86,6 @@ struct DownloadInner {
     progress_handler: Option<Box<dyn Progress + Send>>,
     /// The handler to call when we retry a download.
     retry_handler: RetryHandler,
-    /// Temporary file we'll write while we're downloading (e.g. "file.txt.part")
-    part_filename: PathBuf,
-    ///  "Sidecar" file where we'll store info about the file (the etag, the last modified, etc...).  (e.g. "file.txt.downloadinfo")
-    sidecar_filename: PathBuf,
     /// File we're writing to.
     part_file: File,
 }
@@ -152,16 +152,9 @@ impl Download {
         HeaderValue: TryFrom<V>,
         <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
     {
-        match value.try_into() {
-            Ok(v) => {
-                self.headers.append(key, v);
-            }
-            Err(e) => {
-                self.err = Some(Error::InvalidHeader {
-                    cause: e.into().to_string(),
-                });
-            }
-        };
+        if let Err(e) = append_header(&mut self.headers, key, value) {
+            self.err = Some(e);
+        }
 
         self
     }
@@ -339,43 +332,38 @@ impl Download {
         let destination = self.resolve_destination().await?;
 
         // TODO: Allow forcing the download if the file already exists.
-        if self.should_skip(&destination).await {
+        if self.should_skip(&destination.path).await {
             // File already exists and is the correct length - nothing to do.
             return Ok(DownloadResult {
                 tries: 0,
-                path: destination,
+                path: destination.path,
                 bytes_downloaded: 0,
             });
         }
-
-        // This is a temporary file we'll write while we're downloading.
-        let part_filename = utils::file::add_extension(&destination, "part");
-
-        // And this is a "sidecar" file where we'll store info about the file (the etag, the last modified, etc...)
-        let sidecar_filename = utils::file::add_extension(&destination, "downloadinfo");
 
         // Use information provided by the user, or else load from the sidecar file if it exists.
         let mut local_file_info = self.user_provided_local_file_info;
         if local_file_info.etag.is_none() && local_file_info.last_modified.is_none() {
             // User didn't tell us anything...
-            let _ = local_file_info.load(&sidecar_filename).await;
+            let _ = local_file_info.load(&destination.sidecar_file).await;
         }
 
         // Open the part file for writing.
-        let mut part_file = utils::file::open_file_for_writing_async(&part_filename).await?;
+        let mut part_file =
+            utils::file::open_file_for_writing_async(&destination.part_file).await?;
         let file_length =
-            utils::file::get_file_length_async(&mut part_file, &part_filename).await?;
+            utils::file::get_file_length_async(&mut part_file, &destination.part_file).await?;
 
         // This is the single instance of `ProgressHandle` that we'll update
         // and pass to the progress handler throughout the download.
-        let progress_data = ProgressHandle {
+        let progress = ProgressHandle {
             original_url: self.url,
             updated_url: self.updated_url,
             destination,
             tries: 0,
             bytes_transferred: 0,
             bytes: file_length,
-            bytes_delta: 0,
+            delta: 0,
             local_file_info,
             cancelled: false,
         };
@@ -387,12 +375,10 @@ impl Download {
             max_retries: self.max_retries,
             progress_handler: self.progress_handler,
             retry_handler: self.retry_handler,
-            part_filename,
-            sidecar_filename,
             part_file,
         };
 
-        inner.download(progress_data).await
+        inner.download(progress).await
     }
 
     /// Returns true if the local file exists and is the same length as the remote file.
@@ -449,7 +435,7 @@ impl Download {
     }
 
     /// Returns the final destination path for the download.
-    async fn resolve_destination(&mut self) -> Result<PathBuf, Error> {
+    async fn resolve_destination(&mut self) -> Result<Destination, Error> {
         let mut destination = match &self.destination {
             Some(path) => path.as_path().to_owned(),
             None => std::env::current_dir().map_err(|e| Error::Write {
@@ -465,24 +451,21 @@ impl Download {
             destination = destination.join(filename);
         };
 
-        Ok(destination)
+        Ok(Destination::new(destination))
     }
 }
 
 impl DownloadInner {
-    async fn download(
-        mut self,
-        mut progress_data: ProgressHandle,
-    ) -> Result<DownloadResult, Error> {
+    async fn download(mut self, mut progress: ProgressHandle) -> Result<DownloadResult, Error> {
         let mut retries = 0;
 
         let mut done = false;
         while !done {
-            progress_data.tries += 1;
+            progress.tries += 1;
             retries += 1;
 
-            let bytes_before = progress_data.bytes_transferred;
-            match self.try_download(&mut progress_data).await {
+            let bytes_before = progress.bytes_transferred;
+            match self.try_download(&mut progress).await {
                 Ok(()) => {
                     done = true;
                 }
@@ -490,7 +473,7 @@ impl DownloadInner {
                     if !e.can_retry() {
                         return Err(e);
                     } else {
-                        if progress_data.bytes_transferred > bytes_before {
+                        if progress.bytes_transferred > bytes_before {
                             // We made some progress - reset the retry counter.
                             retries = 0;
                         } else if let Some(max_retries) = self.max_retries
@@ -505,22 +488,22 @@ impl DownloadInner {
                         if matches!(e, Error::FileChanged { .. }) {
                             // The file has changed on the server - we need to start again.
                             utils::file::truncate_file_async(
-                                &self.part_filename,
+                                &progress.destination.part_file,
                                 &mut self.part_file,
                             )
                             .await?;
-                            progress_data.bytes = 0;
+                            progress.bytes = 0;
                             // Reset the local file info. It'll get filled in again
                             // at the start of the next download attempt.
-                            progress_data
+                            progress
                                 .local_file_info
-                                .reset(&self.sidecar_filename)
+                                .reset(&progress.destination.sidecar_file)
                                 .await;
                             delay = Duration::from_secs(0);
                         }
 
                         let mut retry_handle = RetryHandle {
-                            total_tries: progress_data.tries,
+                            total_tries: progress.tries,
                             retries,
                             delay,
                             error: e,
@@ -541,53 +524,51 @@ impl DownloadInner {
         drop(self.part_file);
 
         // Rename the .part file to the final file.
-        tokio::fs::rename(&self.part_filename, &progress_data.destination)
+        tokio::fs::rename(&progress.destination.part_file, &progress.destination.path)
             .await
             .map_err(|e| Error::Write {
                 action: "renaming part file",
-                path: self.part_filename.to_path_buf(),
+                path: progress.destination.part_file,
                 cause: e,
             })?;
 
         // Delete the sidecar file.
-        let _ = tokio::fs::remove_file(&self.sidecar_filename).await;
+        let _ = tokio::fs::remove_file(&progress.destination.sidecar_file).await;
 
         Ok(DownloadResult {
-            tries: progress_data.tries,
-            path: progress_data.destination,
-            bytes_downloaded: progress_data.bytes_transferred,
+            tries: progress.tries,
+            path: progress.destination.path,
+            bytes_downloaded: progress.bytes_transferred,
         })
     }
 
     /// This is the "inner loop" of the download. Try to download the file, and return
     /// an error if it fails for any reason.  The caller can then decide whether to retry or not.
-    async fn try_download(&mut self, progress_data: &mut ProgressHandle) -> Result<(), Error> {
+    async fn try_download(&mut self, progress: &mut ProgressHandle) -> Result<(), Error> {
         // Make our GET request.
-        let response = self.get_file(progress_data).await?;
+        let response = self.get_file(progress).await?;
 
         // If the server returns a "206 - Partial content", we're resuming the download,
         // so we should append to the existing file.  Otherwise, we should overwrite it.
         let append = response.status().as_u16() == 206; // Partial content
-        let remote_file_info = FileInfo::from_reqwest_response(&response, progress_data.bytes);
+        let remote_file_info = FileInfo::from_reqwest_response(&response, progress.bytes);
 
         if append {
             // If we're trying to append to an existing file, but the file has changed on
             // the server, then error.  This SHOULD never happen, thanks to the `If-Range`
             // header we sent, but some servers are not well behaved.
-            progress_data
+            progress
                 .local_file_info
                 .verify_unchanged(&remote_file_info)?;
         }
-        progress_data.local_file_info = remote_file_info;
-        progress_data
+        progress.local_file_info = remote_file_info;
+        progress
             .local_file_info
-            .save(&self.sidecar_filename)
+            .save(&progress.destination.sidecar_file)
             .await;
 
         // Copy data from the response to the .part file.
-        let result = self
-            .copy_response_to_file(progress_data, response, append)
-            .await;
+        let result = self.copy_response_to_file(progress, response, append).await;
 
         // Flush the file to ensure all data is written before we return.
         let _ = self.part_file.flush().await;
@@ -613,13 +594,13 @@ impl DownloadInner {
     }
 
     /// Send a GET request for the file.
-    async fn get_file(&mut self, progress_data: &mut ProgressHandle) -> Result<Response, Error> {
+    async fn get_file(&mut self, progress: &mut ProgressHandle) -> Result<Response, Error> {
         let mut headers = self.headers.clone();
-        self.add_resume_download_headers(progress_data, &mut headers);
-        let url = progress_data.url();
+        self.add_resume_download_headers(progress, &mut headers);
+        let url = progress.url();
         let (u, response) = request(&self.client, reqwest::Method::GET, url.clone(), headers).await;
         if u.is_some() {
-            progress_data.updated_url = u
+            progress.updated_url = u
         }
         response
     }
@@ -628,22 +609,25 @@ impl DownloadInner {
     /// Returns the total number of bytes written to the file, whether or not this succeeds.
     async fn copy_response_to_file(
         &mut self,
-        progress_data: &mut ProgressHandle,
+        progress: &mut ProgressHandle,
         mut response: Response,
         append: bool,
     ) -> Result<u64, Error> {
+        // The number of bytes downloaded on this attempt.
         let mut bytes_downloaded = 0;
+
         if !append {
-            utils::file::truncate_file_async(&self.part_filename, &mut self.part_file).await?;
-            progress_data.bytes = 0;
+            utils::file::truncate_file_async(&progress.destination.part_file, &mut self.part_file)
+                .await?;
+            progress.bytes = 0;
         }
 
         // Initial call into the progress callback.
-        notify(&mut self.progress_handler, progress_data)?;
+        notify(&mut self.progress_handler, progress)?;
 
         while let Some(chunk) = response.chunk().await.map_err(|cause| Error::Network {
             during: "read",
-            url: progress_data.url().to_string(),
+            url: progress.url().to_string(),
             cause,
         })? {
             // Let the rate limiter know we downloaded some bytes.
@@ -654,16 +638,16 @@ impl DownloadInner {
                 .await
                 .map_err(|err| Error::Write {
                     action: "writing to file",
-                    path: self.part_filename.to_owned(),
+                    path: progress.destination.part_file.clone(),
                     cause: err,
                 })?;
 
             let chunk_size = chunk.len() as u64;
             bytes_downloaded += chunk_size;
-            progress_data.bytes_delta = chunk_size;
-            progress_data.bytes += chunk_size;
-            progress_data.bytes_transferred += chunk_size;
-            notify(&mut self.progress_handler, progress_data)?;
+            progress.delta = chunk_size;
+            progress.bytes += chunk_size;
+            progress.bytes_transferred += chunk_size;
+            notify(&mut self.progress_handler, progress)?;
         }
 
         Ok(bytes_downloaded)
@@ -730,14 +714,14 @@ async fn request(
 }
 
 fn notify(
-    progress: &mut Option<Box<dyn Progress + Send>>,
-    progress_data: &mut ProgressHandle,
+    progress_handler: &mut Option<Box<dyn Progress + Send>>,
+    progress: &mut ProgressHandle,
 ) -> Result<(), Error> {
-    if let Some(progress) = progress.as_mut() {
-        progress.progress(progress_data);
+    if let Some(handler) = progress_handler.as_mut() {
+        handler.progress(progress);
     }
 
-    if progress_data.cancelled {
+    if progress.cancelled {
         return Err(Error::Cancelled);
     }
 

@@ -1,8 +1,10 @@
 // FIXME: Add a "progress struct" here.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use url::Url;
+
+use crate::destination::Destination;
 
 pub struct ProgressHandle {
     /// The original URL we are downloading from.
@@ -11,7 +13,7 @@ pub struct ProgressHandle {
     /// this may be different from the original URL.
     pub(crate) updated_url: Option<Url>,
     /// The final path we are downloading to.
-    pub(crate) destination: PathBuf,
+    pub(crate) destination: Destination,
     /// The total number of tries so far to download this file.
     pub(crate) tries: u64,
     /// The actual number of bytes actually transfered so far.
@@ -20,7 +22,7 @@ pub struct ProgressHandle {
     pub(crate) bytes: u64,
     /// The number of bytes transferred since the last time the progress
     /// handler was called.
-    pub(crate) bytes_delta: u64,
+    pub(crate) delta: u64,
     /// Cached information about the local file, either from reading the sidecar
     /// file, or fetched from the server.
     pub(crate) local_file_info: crate::FileInfo,
@@ -63,7 +65,7 @@ impl ProgressHandle {
 
     /// Returns the final path we are downloading to.
     pub fn destination(&self) -> &Path {
-        &self.destination
+        &self.destination.path
     }
 
     /// Returns the total number of tries so far to download this file.  Note that
@@ -76,7 +78,7 @@ impl ProgressHandle {
     /// Returns the number of bytes transferred since the last time the progress
     /// handler was called.
     pub fn delta(&self) -> u64 {
-        self.bytes_delta
+        self.delta
     }
 
     /// Returns the size of the local file on disk, including any bytes downloaded

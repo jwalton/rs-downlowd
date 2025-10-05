@@ -106,6 +106,7 @@ impl FileInfo {
         let _ = tokio::fs::write(sidecar_file, self.serialize()).await;
     }
 
+    /// Reset the FileInfo and delete the sidecar file.
     pub async fn reset(&mut self, sidecar_file: &Path) {
         self.file_length = None;
         self.last_modified = None;

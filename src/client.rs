@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
 
-use crate::{Download, Error, IntoUrl, limiter::TokioLimiter, utils};
+use crate::{limiter::TokioLimiter, utils::{self, http::append_header}, Download, Error, IntoUrl};
 
 const DEFAULT_MAX_RETRIES: u64 = 5;
 
@@ -51,16 +51,9 @@ impl ClientBuilder {
         HeaderValue: TryFrom<V>,
         <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
     {
-        match value.try_into() {
-            Ok(v) => {
-                self.headers.append(key, v);
-            }
-            Err(e) => {
-                self.err = Some(Error::InvalidHeader {
-                    cause: e.into().to_string(),
-                });
-            }
-        };
+        if let Err(e) = append_header(&mut self.headers, key, value) {
+            self.err = Some(e);
+        }
 
         self
     }
