@@ -8,7 +8,7 @@ const DEFAULT_MAX_RETRIES: u64 = 5;
 
 /// Builder for creating a `Client` with custom configuration.
 pub struct ClientBuilder {
-    user_agent: String,
+    user_agent: Option<String>,
     headers: HeaderMap,
     default_max_retries: Option<u64>,
     max_bytes_per_second: Option<u64>,
@@ -30,7 +30,7 @@ impl ClientBuilder {
     /// Create a new ClientBuilder with the given user agent.
     pub fn new() -> Self {
         ClientBuilder {
-            user_agent: "downlowd/1.0".to_string(),
+            user_agent: None,
             headers: HeaderMap::new(),
             default_max_retries: Some(DEFAULT_MAX_RETRIES),
             max_bytes_per_second: None,
@@ -40,7 +40,7 @@ impl ClientBuilder {
 
     /// Set the user agent for the client.
     pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
-        self.user_agent = user_agent.into();
+        self.user_agent = Some(user_agent.into());
         self
     }
 
@@ -92,9 +92,11 @@ impl ClientBuilder {
             return Err(e);
         }
 
-        let client = reqwest::Client::builder()
-            .user_agent(&self.user_agent)
-            .default_headers(self.headers)
+        let mut builder = reqwest::Client::builder();
+        if let Some(user_agent) = &self.user_agent {
+            builder = builder.user_agent(user_agent);
+        }
+        let client = builder.default_headers(self.headers)
             .build()
             .expect("Failed to create HTTP client");
 
