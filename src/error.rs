@@ -2,33 +2,44 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+/// Errors from the downlow crate.  Some errors are "retryable", meaning that
+/// downlow will automatically retry the download if the error occurs. Retryable
+/// errors are marked as such.
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
+    /// The configuration provided was invalid.
     #[error("Invalid configuration: {message}")]
     #[non_exhaustive]
     InvalidConfig { message: String },
 
+    /// The URL provided was invalid.
     #[error("Invalid URL: {cause}")]
     #[non_exhaustive]
     InvalidUrl { cause: String },
 
+    /// The caller attempted to add a header to the download, but the header contained invalid characters.
     #[error("Invalid header: {cause}")]
     #[non_exhaustive]
     InvalidHeader { cause: String },
 
+    /// There was a network error when downloading the file (e.g. the host is unreachable, the connection was reset, etc).
+    /// Network errors are retryable.
     #[error("Network error during {during} for {url}: {cause}")]
     #[non_exhaustive]
     Network {
         during: &'static str,
         url: String,
-        cause: reqwest::Error,
+        cause: String,
     },
 
+    /// When attempting to download the file, the client was redirected too many times,
+    /// was redirected in a loop, or was redirected to an invalid URL.
     #[error("Bad redirect: {reason}")]
     #[non_exhaustive]
     BadRedirect { reason: &'static str },
 
+    /// There was an error writing the file to disk.
     #[error("Error {action} for {path}: {cause}")]
     #[non_exhaustive]
     Write {
@@ -37,14 +48,21 @@ pub enum Error {
         cause: std::io::Error,
     },
 
+    /// The server returned an error status code.  UnexpectedStatus errors may
+    /// be retryable, depending on the status code.  5xx status codes are
+    /// retryable, while 4xx status codes are not.
     #[error("Unexpected response status: {status}")]
     #[non_exhaustive]
     UnexpectedStatus { status: u16 },
 
-    #[error("File changed on server during download")]
+    /// FileChanged is thown when attempting to resume a download, and the etag,
+    /// last-modified, or file length returned by the server differs from what
+    /// we expect.  FileChanged errors are retryable.
+    #[error("File changed on server during download: {description}")]
     #[non_exhaustive]
     FileChanged { description: &'static str },
 
+    /// The download was cancelled by the user.
     #[error("Download was cancelled")]
     Cancelled,
 }

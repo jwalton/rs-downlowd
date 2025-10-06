@@ -54,7 +54,7 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
         .build()
         .unwrap();
     let start = SystemTime::now();
-    let fut = {
+    let join_handle = {
         let client = client.clone();
         tokio::spawn(async move {
             client
@@ -70,7 +70,7 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
     client.max_bytes_per_second(Some(5 * 1024 * 1024)).await;
 
     let timeout = Duration::from_secs(10);
-    tokio::time::timeout(timeout, fut).await???;
+    tokio::time::timeout(timeout, join_handle).await???;
     let elapsed = start.elapsed().unwrap().as_millis();
 
     println!("Downloaded tool {elapsed} ms",);

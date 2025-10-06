@@ -116,9 +116,7 @@ impl Download {
             Ok(u) => (u, None),
             Err(e) => (
                 Url::parse("http://invalid/").unwrap(),
-                Some(Error::InvalidUrl {
-                    cause: e.to_string(),
-                }),
+                Some(e),
             ),
         };
 
@@ -628,7 +626,7 @@ impl DownloadInner {
         while let Some(chunk) = response.chunk().await.map_err(|cause| Error::Network {
             during: "read",
             url: progress.url().to_string(),
-            cause,
+            cause: cause.without_url().to_string(),
         })? {
             // Let the rate limiter know we downloaded some bytes.
             self.limiter.bytes_consumed(chunk.len() as u64).await;
@@ -683,7 +681,7 @@ async fn request(
                 Error::Network {
                     during: method_name,
                     url: url.to_string(),
-                    cause,
+                    cause: cause.without_url().to_string(),
                 }
             }
         });
