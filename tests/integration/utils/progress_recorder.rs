@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use downlow::ProgressHandle;
+use downlowd::ProgressHandle;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgressRecord {

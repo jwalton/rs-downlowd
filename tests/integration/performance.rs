@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use downlow::Client;
+use downlowd::Client;
 use temp_dir::TempDir;
 use tokio::fs;
 
@@ -26,7 +26,7 @@ async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
     let elapsed = start.elapsed().unwrap();
     let control_ms_per_iteration = elapsed.as_millis() as f64 / ITERATIONS as f64;
 
-    // Then, the same, but using downlow to do the download.
+    // Then, the same, but using downlowd to do the download.
     let client = Client::new();
     let start = SystemTime::now();
     for _ in 0..ITERATIONS {

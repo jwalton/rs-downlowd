@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use downlow::Client;
+use downlowd::Client;
 use temp_dir::TempDir;
 
 use crate::integration::{constants::SERVER_URL, utils};

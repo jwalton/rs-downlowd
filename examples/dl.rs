@@ -18,7 +18,7 @@ fn main() {
 
             let url = &args[1];
             let destination = Path::new(&args[2]);
-            let client = downlow::Client::new();
+            let client = downlowd::Client::new();
             match client
                 .download(url)
                 .destination(destination)

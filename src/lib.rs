@@ -190,15 +190,15 @@ impl Download {
     /// ```no_run
     /// # use std::time::Duration;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = downlow::Client::new();
+    ///     let client = downlowd::Client::new();
     ///     let result = client.download("https://example.com/file.txt")
     ///        .destination("file.txt")
     ///        .on_retry(|r| {
-    ///           if matches!(r.error(), downlow::Error::FileChanged { .. }) {
+    ///           if matches!(r.error(), downlowd::Error::FileChanged { .. }) {
     ///               // No delay if the file changed.
     ///               r.set_delay(Duration::ZERO);
     ///           } else {
-    ///               r.set_delay(downlow::exponential_backoff(
+    ///               r.set_delay(downlowd::exponential_backoff(
     ///                   Duration::from_secs(5),
     ///                   Duration::from_secs(120),
     ///                   r.retries(),
@@ -216,14 +216,14 @@ impl Download {
     /// ```
     /// # use std::time::Duration;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let client = downlow::Client::new();
+    ///     let client = downlowd::Client::new();
     ///     let result = client.download("http://localhost:8089/i_do_not_exist.txt")
     ///        .destination("file.txt")
     ///        .on_retry(|r| r.cancel())
     ///        .download()
     ///        .await;
     ///
-    ///     assert!(matches!(result, Err(downlow::Error::UnexpectedStatus { status: 404, .. })));
+    ///     assert!(matches!(result, Err(downlowd::Error::UnexpectedStatus { status: 404, .. })));
     /// #   Ok(())
     /// # }
     /// ```
@@ -266,7 +266,7 @@ impl Download {
         self
     }
 
-    /// Returns the filename that downlow will use when downloading the file.
+    /// Returns the filename that downlowd will use when downloading the file.
     /// This is determined by making a HEAD request to the server, and looking
     /// at the `Content-Disposition` header, if present, or falling back to the
     /// last part of the URL path.

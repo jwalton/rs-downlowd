@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-/// Errors from the downlow crate.  Some errors are "retryable", meaning that
-/// downlow will automatically retry the download if the error occurs. Retryable
+/// Errors from the downlowd crate.  Some errors are "retryable", meaning that
+/// downlowd will automatically retry the download if the error occurs. Retryable
 /// errors are marked as such.
 #[derive(Error, Debug)]
 #[non_exhaustive]

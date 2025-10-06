@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use downlow::Client;
+use downlowd::Client;
 use temp_dir::TempDir;
 
 use crate::integration::{constants::SERVER_URL, utils};

@@ -1,4 +1,4 @@
-use downlow::Client;
+use downlowd::Client;
 use http::HeaderMap;
 use temp_dir::TempDir;
 
@@ -165,7 +165,7 @@ async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::
         .unwrap_err();
 
     println!("Error: {result} for {url}");
-    assert!(matches!(result, downlow::Error::Cancelled));
+    assert!(matches!(result, downlowd::Error::Cancelled));
     let file_size = tokio::fs::metadata(&part_file).await?.len();
     println!("file_size: {file_size}");
     assert!(file_size > 1_000_000);

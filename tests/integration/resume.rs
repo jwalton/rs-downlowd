@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use downlow::Client;
+use downlowd::Client;
 use temp_dir::TempDir;
 
 use crate::integration::{

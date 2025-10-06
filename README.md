@@ -1,6 +1,6 @@
-# downlow
+# downlowd
 
-Downloading a file is easy. Just make an HTTP request, and write the results to a file, right? There's actually a lot more to consider. `downlow` supports:
+Downloading a file is easy. Just make an HTTP request, and write the results to a file, right? There's actually a lot more to consider. `downlowd` supports:
 
 - Streaming the file to disk, instead of downloading it to memory and then writing it to disk. This is both faster and far more memory efficient for large files.
 - Progress callback for displaying progress bar.
@@ -20,7 +20,7 @@ This is the simplest example:
 
 ```rust
 # tokio_test::block_on(async {
-use downlow::Client;
+use downlowd::Client;
 # use temp_dir::TempDir;
 # let dir = TempDir::new()?;
 # let dirname = dir.path();
@@ -39,19 +39,19 @@ assert_eq!(file_contents, "hello world");
 # }).unwrap()
 ```
 
-This is a short example, but it has a lot packed into it. First, since we've passed in a directory as the `destination`, this will work out what filename the file should be saved as In this case, the filename is derived from the URL, but if the server responds to a HEAD request with a `Content-Disposition` header with a filename, we'll use that filename. Note here we could also specify a filename instead of a directory name, and then `downlow` would write our file to the specified filename.
+This is a short example, but it has a lot packed into it. First, since we've passed in a directory as the `destination`, this will work out what filename the file should be saved as In this case, the filename is derived from the URL, but if the server responds to a HEAD request with a `Content-Disposition` header with a filename, we'll use that filename. Note here we could also specify a filename instead of a directory name, and then `downlowd` would write our file to the specified filename.
 
-If the file already exists, and has the correct length, then `downlow` will just report success right away! If not, then we'll start downloading the file into a file named `hello.txt.part`. The file will be renamed to `hello.txt` once the download is complete. While the download is in progress, a "sidecar" file named `hello.txt.downloadinfo` will be written alongside the file which will contain cache information about the file (the etag header, the last-modified header, etc...). The sidecar file is used to help determine whether or not a file has changed on the server if the download is interrupted and needs to be resumed.
+If the file already exists, and has the correct length, then `downlowd` will just report success right away! If not, then we'll start downloading the file into a file named `hello.txt.part`. The file will be renamed to `hello.txt` once the download is complete. While the download is in progress, a "sidecar" file named `hello.txt.downloadinfo` will be written alongside the file which will contain cache information about the file (the etag header, the last-modified header, etc...). The sidecar file is used to help determine whether or not a file has changed on the server if the download is interrupted and needs to be resumed.
 
-If there's an error during the download, such as a network error, or the transfer is interrupted, or the server returns a 5xx error, then `downlow` will automatically retry the file, with an exponential backoff between retries. By default, `downlow` will retry forever.  Calling `max_retries()` will set a maximum number of tries, but note that `downlow` will reset the retry counter if any progress is made downloading the file.
+If there's an error during the download, such as a network error, or the transfer is interrupted, or the server returns a 5xx error, then `downlowd` will automatically retry the file, with an exponential backoff between retries. By default, `downlowd` will retry forever.  Calling `max_retries()` will set a maximum number of tries, but note that `downlowd` will reset the retry counter if any progress is made downloading the file.
 
 ### Reporting Progress
 
-There are a couple of ways you can hook into downlow to report on progress. The `on_progress` handler is called once at the start of the download, and then whenever bytes are downloaded.
+There are a couple of ways you can hook into downlowd to report on progress. The `on_progress` handler is called once at the start of the download, and then whenever bytes are downloaded.
 
 ```rust
 # tokio_test::block_on(async {
-# use downlow::Client;
+# use downlowd::Client;
 # use temp_dir::TempDir;
 # let dir = TempDir::new()?;
 # let dirname = dir.path();
@@ -89,7 +89,7 @@ You can also use the `on_retry()` method to register a handler that will be run 
 # tokio_test::block_on(async {
 # use std::time::Duration;
 # use temp_dir::TempDir;
-use downlow::{Client, Error};
+use downlowd::{Client, Error};
 # let dir = TempDir::new()?;
 # let dirname = dir.path();
 
@@ -102,7 +102,7 @@ let result = client
             // No delay if the file changed.
             r.set_delay(Duration::ZERO);
         } else {
-            r.set_delay(downlow::exponential_backoff(
+            r.set_delay(downlowd::exponential_backoff(
                 Duration::from_secs(1),
                 Duration::from_secs(30),
                 r.retries(),
@@ -124,7 +124,7 @@ You can create a custom client using the `ClientBuilder`:
 
 ```rust
 # tokio_test::block_on(async {
-use downlow::{ClientBuilder, Client};
+use downlowd::{ClientBuilder, Client};
 # use temp_dir::TempDir;
 # let dir = TempDir::new()?;
 # let dirname = dir.path();
