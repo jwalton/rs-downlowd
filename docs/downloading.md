@@ -20,3 +20,12 @@ At this point, the naive approach would be to send a HEAD request to the server 
 
 Basically the idea is, if we know we have the first 1000 bytes of the file, we'd send a request that has `Range: 1000-` and `If-Range: [last-modified-date]` or `If-Range: [etag]`, and then the server will do one of two things; if the file hasn't changed and the server supports ranges, it will reply with "206 - Partial Content" and a "Content-Range" header indicating what bytes it's sending back, or if the file has change and/or the server doesn't support range headers, the server will reply with a regular "200 - OK" and send us the whole file from the start. Using `If-Range` is also a more reliable solution than trying to send a HEAD request, as many servers don't follow the HTTP specification very well, and may to neglect to send the Etag or Last-Modified headers when presented with a HEAD request.
 
+## Rate Limiting a Download
+
+Rate limiting a download is actually very easy; the trick is to just stop reading bytes from the network socket.
+
+We're exploitiong something here called "backpressure". As data arrives as your phyiscal "network interface controller" (or NIC), the NIC will write that data into a buffer that's shared between the OS and the NIC's driver. This buffer typically comes from a small ring buffer. If your application stops reading data from this buffer, the buffer will fill up. Since the NIC's driver no longer has anywhere to write data, it will do the only thing it can do and start dropping packets as they come in. The sender will stop receiving ACKs for packets it is sending, and standard TCP congestion control will cause the sender to start sending more slowly, trying to find a pace at which no packets are lost.
+
+In other words, if we want to download at a specific speed, all we need to do is `sleep()` for a short while if we're downloading bytes faster than this speed.
+
+`downlowd` accomplishes this through a simple leaky-bucket style rate limiter. As we download data, we remove tokens from the bucket. If we ever get to a point where there are no tokens left, we simply sleep until there would be enough tokens.

@@ -2,6 +2,7 @@ use http::{HeaderMap, HeaderName, HeaderValue, header::IntoHeaderName};
 
 use crate::Error;
 
+/// Append a header to a `HeaderMap`.
 pub fn append_header<K, V>(headers: &mut HeaderMap, key: K, value: V) -> Result<(), Error>
 where
     K: IntoHeaderName,
@@ -22,6 +23,7 @@ where
     Ok(())
 }
 
+/// Append all values from `new_headers` to `headers`.
 pub fn append_all_headers<T>(headers: &mut HeaderMap<T>, new_headers: HeaderMap<T>) {
     let mut key = HeaderName::from_static("x-placeholder");
     for (k, value) in new_headers.into_iter() {
