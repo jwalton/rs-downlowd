@@ -27,7 +27,7 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let result = client
         .download(url)
         .destination(destination)
-        .download()
+        .send()
         .await?;
 
     assert_eq!(result.bytes_downloaded, 11);
@@ -56,7 +56,7 @@ async fn should_set_the_user_agent_in_client() -> Result<(), Box<dyn std::error:
     let result = client
         .download(server.url("/file.txt"))
         .destination(dir.path().join("my-file.txt"))
-        .download()
+        .send()
         .await?;
 
     assert_eq!(result.bytes_downloaded, 11);
@@ -82,7 +82,7 @@ async fn should_set_the_user_agent_for_a_single_download() -> Result<(), Box<dyn
         .download(server.url("/file.txt"))
         .user_agent("test2")
         .destination(dir.path().join("my-file.txt"))
-        .download()
+        .send()
         .await?;
 
     assert_eq!(result.bytes_downloaded, 11);
@@ -119,7 +119,7 @@ async fn should_follow_redirects() -> Result<(), Box<dyn std::error::Error>> {
             assert_eq!(progress.original_url().to_string(), url.to_string());
             assert_eq!(progress.url().to_string(), redirect_url.to_string());
         })
-        .download()
+        .send()
         .await?;
 
     assert_eq!(result.bytes_downloaded, 11);
@@ -150,7 +150,7 @@ async fn should_not_follow_redirect_loop() -> Result<(), Box<dyn std::error::Err
         .download(url)
         .max_retries(Some(100))
         .destination(destination)
-        .download()
+        .send()
         .await;
 
     let err = result.unwrap_err();
@@ -192,7 +192,7 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
         .download(url)
         .destination(destination)
         .etag("test-etag")
-        .download()
+        .send()
         .await?;
 
     assert_eq!(result.bytes_downloaded, 6);
@@ -230,7 +230,7 @@ async fn should_add_custom_headers() -> Result<(), Box<dyn std::error::Error>> {
         .download(url)
         .header("x-my-other", "canon")
         .destination(destination)
-        .download()
+        .send()
         .await?;
 
     assert_eq!(result.bytes_downloaded, 11);
@@ -274,7 +274,7 @@ async fn should_retry_a_download() -> Result<(), Box<dyn std::error::Error>> {
                 *count += 1;
                 r.set_delay(Duration::ZERO);
             })
-            .download()
+            .send()
             .await?
     };
 
@@ -311,7 +311,7 @@ async fn should_abort_on_retry() -> Result<(), Box<dyn std::error::Error>> {
         .on_retry(move |r| {
             r.cancel();
         })
-        .download()
+        .send()
         .await;
 
     assert!(matches!(

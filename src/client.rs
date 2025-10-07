@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
 
-use crate::{limiter::TokioLimiter, utils::{self, http::append_header}, Download, Error, IntoUrl};
-
-const DEFAULT_MAX_RETRIES: u64 = 5;
+use crate::{
+    DEFAULT_MAX_RETRIES, Download, Error, IntoUrl,
+    limiter::TokioLimiter,
+    utils::{self, http::append_header},
+};
 
 /// Builder for creating a `Client` with custom configuration.
 pub struct ClientBuilder {
@@ -32,7 +34,7 @@ impl ClientBuilder {
         ClientBuilder {
             user_agent: None,
             headers: HeaderMap::new(),
-            default_max_retries: Some(DEFAULT_MAX_RETRIES),
+            default_max_retries: DEFAULT_MAX_RETRIES,
             max_bytes_per_second: None,
             err: None,
         }
@@ -96,7 +98,8 @@ impl ClientBuilder {
         if let Some(user_agent) = &self.user_agent {
             builder = builder.user_agent(user_agent);
         }
-        let client = builder.default_headers(self.headers)
+        let client = builder
+            .default_headers(self.headers)
             .build()
             .expect("Failed to create HTTP client");
 
@@ -130,7 +133,7 @@ impl Client {
     ///     let client = downlowd::Client::new();
     ///     let result = client.download("https://example.com/file.txt")
     ///        .destination("file.txt")
-    ///        .download()
+    ///        .send()
     ///        .await?;
     /// #   Ok(())
     /// # }

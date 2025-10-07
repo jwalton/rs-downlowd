@@ -29,7 +29,7 @@ let client = Client::new();
 let result = client
     .download("http://localhost:8089/hello.txt")
     .destination(dirname)
-    .download()
+    .send()
     .await?;
 
 assert_eq!(&result.path, &dirname.join("hello.txt"));
@@ -67,7 +67,7 @@ let result = client
             progress.total_bytes().unwrap()
         );
     })
-    .download()
+    .send()
     .await?;
 
 assert_eq!(&result.path, &dirname.join("file.txt"));
@@ -109,7 +109,7 @@ let result = client
             ));
         }
     })
-    .download()
+    .send()
     .await?;
 
 # Ok::<(), Box<dyn std::error::Error>>(())
@@ -139,7 +139,7 @@ let result = client
     // Can set headers at the request level, too.
     .header("x-my-custom-header", "canon")
     .destination(dirname.join("file.txt"))
-    .download()
+    .send()
     .await?;
 # Ok::<(), Box<dyn std::error::Error>>(())
 # }).unwrap()

@@ -35,7 +35,7 @@ fn main() {
                     }
                     progress.set_position(p.bytes());
                 })
-                .download()
+                .send()
                 .await
             {
                 Ok(result) => {

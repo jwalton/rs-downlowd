@@ -3,6 +3,10 @@ use std::borrow::Cow;
 use http::HeaderName;
 use reqwest::Response;
 
+mod content_range;
+
+pub use content_range::*;
+
 /// Retrieves a header value as a string slice.
 fn get_header_str<'a>(response: &'a Response, name: &HeaderName) -> Option<&'a str> {
     response

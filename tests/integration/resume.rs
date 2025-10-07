@@ -10,6 +10,8 @@ use crate::integration::{
 
 const MESSAGE: &str = "hello world";
 
+// FIXME: Add tests for handling various cases where we already have the whole file on disk during a resume.
+
 async fn write_sidecar_file(
     path: &Path,
     last_modified: Option<&str>,
@@ -51,7 +53,7 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
             .last_modified(head.last_modified)
             .destination(&destination)
             .on_progress(recorder.on_progress())
-            .download()
+            .send()
             .await?
     };
 
@@ -111,7 +113,7 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
                 progress.total_bytes().unwrap()
             );
         })
-        .download()
+        .send()
         .await?;
 
     assert_eq!(&result.path, &destination);
@@ -153,7 +155,7 @@ async fn should_not_continue_a_file_from_sidecar_if_length_etag_changed()
     let result = client
         .download(&url)
         .destination(&destination)
-        .download()
+        .send()
         .await?;
 
     assert_eq!(&result.path, &destination);
@@ -180,7 +182,7 @@ async fn should_not_continue_a_file_from_sidecar_if_length_has_changed()
 
     // Create a partial file to simulate a previous download.
     let part_file = dir.path().join("my-file.txt.part");
-    tokio::fs::write(&part_file, "whoop").await?;
+    tokio::fs::write(&part_file, "---").await?;
     let head = utils::head_url(&url).await;
     let sidecar_file = dir.path().join("my-file.txt.downloadinfo");
     write_sidecar_file(
@@ -195,7 +197,7 @@ async fn should_not_continue_a_file_from_sidecar_if_length_has_changed()
     let result = client
         .download(&url)
         .destination(&destination)
-        .download()
+        .send()
         .await?;
 
     assert_eq!(&result.path, &destination);
@@ -224,7 +226,7 @@ async fn should_not_continue_a_file_with_wrong_last_modified()
         .download(&url)
         .destination(&destination)
         .last_modified("wrong")
-        .download()
+        .send()
         .await?;
 
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
@@ -253,7 +255,7 @@ async fn should_redownload_if_etag_is_same_but_last_modified_has_changed()
         .destination(&destination)
         .etag(head.etag)
         .last_modified("wrong")
-        .download()
+        .send()
         .await?;
 
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
@@ -291,7 +293,7 @@ async fn should_prefer_user_etag_over_sidecar_file() -> Result<(), Box<dyn std::
         // We're providing the correct etag, maybe from a database.  This should
         // override whatever the sidecar file says.
         .etag(head.etag)
-        .download()
+        .send()
         .await?;
 
     assert_eq!(&result.path, &destination);

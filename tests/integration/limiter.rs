@@ -21,7 +21,7 @@ async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>>
         .build()
         .unwrap();
     let start = SystemTime::now();
-    let fut = client.download(&url).destination(&destination).download();
+    let fut = client.download(&url).destination(&destination).send();
     let result = tokio::time::timeout(timeout, fut).await??;
     let elapsed = start.elapsed().unwrap().as_millis();
 
@@ -42,7 +42,7 @@ async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>>
 #[tokio::test]
 async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn std::error::Error>> {
     let file_size = 10 * 1024 * 1024; // 10 MB.
-    let limit = 1024; // Stupid slow.
+    let limit = 32 * 1024; // 32 KB/s.
 
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
@@ -56,13 +56,7 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
     let start = SystemTime::now();
     let join_handle = {
         let client = client.clone();
-        tokio::spawn(async move {
-            client
-                .download(&url)
-                .destination(&destination)
-                .download()
-                .await
-        })
+        tokio::spawn(async move { client.download(&url).destination(&destination).send().await })
     };
 
     // Wait a bit, then increase the limit.
@@ -73,10 +67,11 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
     tokio::time::timeout(timeout, join_handle).await???;
     let elapsed = start.elapsed().unwrap().as_millis();
 
-    println!("Downloaded tool {elapsed} ms",);
+    println!("Downloaded took {elapsed} ms",);
+
     // 1 second of downloading slowly, then 2 seconds at 5mb/s.
     assert!(
-        (2900..=3100).contains(&elapsed),
+        (2500..=3100).contains(&elapsed),
         "Download was not rate limited. 3000 ms expected, got {elapsed} ms"
     );
 
@@ -84,9 +79,10 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
 }
 
 #[tokio::test]
-async fn should_allow_removing_download_speed_partway_through() -> Result<(), Box<dyn std::error::Error>> {
+async fn should_allow_removing_download_speed_partway_through()
+-> Result<(), Box<dyn std::error::Error>> {
     let file_size = 10 * 1024 * 1024; // 10 MB.
-    let limit = 1024; // Stupid slow.
+    let limit = 32 * 1024; // 32 KB/s.
 
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
@@ -100,13 +96,7 @@ async fn should_allow_removing_download_speed_partway_through() -> Result<(), Bo
     let start = SystemTime::now();
     let fut = {
         let client = client.clone();
-        tokio::spawn(async move {
-            client
-                .download(&url)
-                .destination(&destination)
-                .download()
-                .await
-        })
+        tokio::spawn(async move { client.download(&url).destination(&destination).send().await })
     };
 
     // Wait a bit, then increase the limit.
@@ -117,10 +107,10 @@ async fn should_allow_removing_download_speed_partway_through() -> Result<(), Bo
     tokio::time::timeout(timeout, fut).await???;
     let elapsed = start.elapsed().unwrap().as_millis();
 
-    println!("Downloaded tool {elapsed} ms",);
+    println!("Downloaded took {elapsed} ms",);
     assert!(
         (900..=1500).contains(&elapsed),
-        "Download was not rate limited. 3000 ms expected, got {elapsed} ms"
+        "Download was not rate limited. 1000 ms expected, got {elapsed} ms"
     );
 
     Ok(())

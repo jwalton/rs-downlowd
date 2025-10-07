@@ -7,7 +7,7 @@ const LAST_MODIFIED_TAG: &str = "Last-Modified";
 const ETAG_TAG: &str = "Etag";
 
 /// Information we know about a file.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct FileInfo {
     pub file_length: Option<u64>,
     pub last_modified: Option<String>,
@@ -24,9 +24,12 @@ impl FileInfo {
             0
         };
 
+        let file_length = headers::parse_content_range(response)
+            .and_then(|cr| cr.total)
+            .or_else(|| headers::parse_content_length(response).map(|len| len + local_file_size));
+
         FileInfo {
-            // TODO: If the content-length header is missing, use the content-range header instead.
-            file_length: headers::parse_content_length(response).map(|len| len + local_file_size),
+            file_length,
             last_modified: headers::get_last_modified(response).map(str::to_string),
             etag: headers::etag(response).map(str::to_string),
         }
@@ -173,11 +176,12 @@ impl FileInfo {
 
         if let (Some(local_length), Some(remote_length)) =
             (self.file_length, remote_file_info.file_length)
-            && local_length != remote_length {
-                return Err(Error::FileChanged {
-                    description: "file size changed",
-                });
-            }
+            && local_length != remote_length
+        {
+            return Err(Error::FileChanged {
+                description: "file size changed",
+            });
+        }
 
         Ok(())
     }
@@ -185,6 +189,8 @@ impl FileInfo {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::http_test::make_reqwest_response;
+
     use super::*;
 
     const SAMPLE: &str = r#"File-Length: 1234
@@ -225,5 +231,76 @@ Etag: abc123
         assert_eq!(info.file_length, None);
         assert_eq!(info.last_modified, None);
         assert_eq!(info.etag, None);
+    }
+
+    #[tokio::test]
+    async fn should_read_from_response() {
+        let response = make_reqwest_response(
+            200,
+            &[
+                ("content-length", "6"),
+                ("last-modified", "2023-10-01T12:34:56Z"),
+                ("etag", "foo"),
+            ],
+            "abcdef",
+        )
+        .await;
+
+        assert_eq!(
+            FileInfo::from_reqwest_response(&response, 0),
+            FileInfo {
+                file_length: Some(6),
+                last_modified: Some("2023-10-01T12:34:56Z".to_string()),
+                etag: Some("foo".to_string()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_read_from_response_for_206() {
+        let response = make_reqwest_response(
+            206,
+            &[
+                ("content-length", "6"),
+                ("last-modified", "2023-10-01T12:34:56Z"),
+                ("etag", "foo"),
+            ],
+            "abcdef",
+        )
+        .await;
+
+        assert_eq!(
+            FileInfo::from_reqwest_response(&response, 5),
+            FileInfo {
+                file_length: Some(11),
+                last_modified: Some("2023-10-01T12:34:56Z".to_string()),
+                etag: Some("foo".to_string()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_read_from_response_for_206_with_content_range() {
+        let response = make_reqwest_response(
+            206,
+            &[
+                ("content-length", "6"),
+                ("content-range", "bytes 5-10/300"),
+                ("last-modified", "2023-10-01T12:34:56Z"),
+                ("etag", "foo"),
+            ],
+            "abcdef",
+        )
+        .await;
+
+        assert_eq!(
+            FileInfo::from_reqwest_response(&response, 5),
+            FileInfo {
+                // Should trust the content-range total over content-length + local_file_size.
+                file_length: Some(300),
+                last_modified: Some("2023-10-01T12:34:56Z".to_string()),
+                etag: Some("foo".to_string()),
+            }
+        );
     }
 }

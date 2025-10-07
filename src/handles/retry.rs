@@ -15,6 +15,21 @@ pub struct RetryHandle {
 }
 
 impl RetryHandle {
+    pub fn new(
+        total_tries: u64,
+        retries: u64,
+        delay: std::time::Duration,
+        error: crate::Error,
+    ) -> Self {
+        Self {
+            total_tries,
+            retries,
+            delay,
+            error,
+            cancelled: false,
+        }
+    }
+
     /// Returns the total number of tries so far to download this file.
     pub fn total_tries(&self) -> u64 {
         self.total_tries

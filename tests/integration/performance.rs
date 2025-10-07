@@ -34,7 +34,7 @@ async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
         client
             .download(&url)
             .destination(&destination)
-            .download()
+            .send()
             .await?;
     }
     let elapsed = start.elapsed().unwrap();

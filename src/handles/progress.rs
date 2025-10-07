@@ -1,10 +1,8 @@
-// FIXME: Add a "progress struct" here.
-
 use std::path::Path;
 
 use url::Url;
 
-use crate::destination::Destination;
+use crate::{destination::Destination, file_info::FileInfo};
 
 pub struct ProgressHandle {
     /// The original URL we are downloading from.
@@ -25,7 +23,7 @@ pub struct ProgressHandle {
     pub(crate) delta: u64,
     /// Cached information about the local file, either from reading the sidecar
     /// file, or fetched from the server.
-    pub(crate) local_file_info: crate::FileInfo,
+    pub(crate) local_file_info: FileInfo,
     /// True if the download has been cancelled.
     pub(crate) cancelled: bool,
 }
@@ -51,6 +49,41 @@ impl Progress for Box<dyn Progress> {
 }
 
 impl ProgressHandle {
+    pub(crate) fn new(
+        original_url: Url,
+        updated_url: Option<Url>,
+        destination: Destination,
+        local_file_info: FileInfo,
+        existing_file_length: u64,
+    ) -> Self {
+        Self {
+            original_url,
+            updated_url,
+            destination,
+            tries: 0,
+            bytes_transferred: 0,
+            bytes: existing_file_length,
+            delta: 0,
+            local_file_info,
+            cancelled: false,
+        }
+    }
+
+    /// Reset progress and local_file_info before restarting a download.
+    pub(crate) async fn reset(&mut self) {
+        self.bytes = 0;
+        // Reset the local file info. It'll get filled in again
+        // at the start of the next download attempt.
+        self.local_file_info
+            .reset(&self.destination.sidecar_file)
+            .await;
+    }
+
+    /// Returns true if we have the entire file already downloaded.
+    pub(crate) fn is_complete(&self) -> Option<bool> {
+        self.local_file_info.file_length.map(|len| self.bytes == len)
+    }
+
     /// Returns the original URL we are downloading from.
     pub fn original_url(&self) -> &Url {
         &self.original_url

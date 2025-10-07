@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use downlowd::Client;
 use http::HeaderMap;
 use temp_dir::TempDir;
@@ -14,7 +16,7 @@ async fn should_get_the_name_of_the_file() -> Result<(), Box<dyn std::error::Err
     let url = format!("{SERVER_URL}/hello.txt");
 
     let mut download = Client::new().download(&url);
-    assert_eq!(&download.get_remote_file_name().await, "hello.txt");
+    assert_eq!(download.get_remote_file_name().await, "hello.txt");
     Ok(())
 }
 
@@ -41,7 +43,7 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
 
                 recorder.record_progress(p);
             })
-            .download()
+            .send()
             .await?
     };
 
@@ -86,7 +88,7 @@ async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::err
                 progress.total_bytes().unwrap()
             );
         })
-        .download()
+        .send()
         .await?;
 
     assert_eq!(&result.path, &destination);
@@ -109,7 +111,7 @@ async fn should_not_skip_a_file_if_the_size_is_wrong() -> Result<(), Box<dyn std
     let result = client
         .download(&url)
         .destination(&destination)
-        .download()
+        .send()
         .await?;
 
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
@@ -134,7 +136,7 @@ async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
         .on_progress(move |_| {
             panic!("Should not call progress handler on 404");
         })
-        .download()
+        .send()
         .await;
 
     let err = result.err().unwrap();
@@ -160,7 +162,7 @@ async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::
                 progress.cancel();
             }
         })
-        .download()
+        .send()
         .await
         .unwrap_err();
 
@@ -175,7 +177,7 @@ async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::
     let result = client
         .download(&url)
         .destination(&destination)
-        .download()
+        .send()
         .await?;
 
     assert_eq!(&result.path, &destination);
@@ -205,7 +207,17 @@ async fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::erro
         .user_agent("my-user-agent-2/1.0")
         .header("key", "new-value")
         .headers(HeaderMap::new())
-        .max_retries(Some(20));
+        .on_progress(|progress| {
+            println!(
+                "Downloaded {} of {} bytes",
+                progress.bytes(),
+                progress.total_bytes().unwrap()
+            );
+        })
+        .on_retry(|r| r.set_delay(Duration::from_secs(1)))
+        .max_retries(Some(20))
+        .etag("some-etag")
+        .last_modified("2023-10-01T12:34:56Z");
 
     Ok(())
 }
