@@ -37,7 +37,7 @@ async fn should_work_when_cancelled() -> Result<(), Box<dyn std::error::Error>> 
             .on_progress(move |p| {
                 bytes_downloaded.fetch_add(p.delta(), Ordering::SeqCst);
             })
-            .download();
+            .send();
         let result = tokio::time::timeout(Duration::from_millis(100), fut).await;
 
         if result.is_ok() {
