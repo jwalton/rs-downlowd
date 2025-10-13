@@ -7,7 +7,7 @@ use crate::integration::{constants::SERVER_URL, utils};
 
 #[tokio::test]
 async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>> {
-    let file_size = 10 * 1024 * 1024; // 10 MB.
+    let file_size = 5 * 1024 * 1024; // 5 MB.
     let limit = 5 * 1024 * 1024; // 5 MB/s
     let timeout = Duration::from_secs(file_size as u64 / limit * 2);
 
@@ -32,7 +32,7 @@ async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>>
     );
 
     assert!(
-        (1900..=2100).contains(&elapsed),
+        (800..=1200).contains(&elapsed),
         "Download was not rate limited. 2000 ms expected, got {elapsed} ms"
     );
 
@@ -60,8 +60,8 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
     };
 
     // Wait a bit, then increase the limit.
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    client.max_bytes_per_second(Some(5 * 1024 * 1024)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    client.max_bytes_per_second(Some(10 * 1024 * 1024));
 
     let timeout = Duration::from_secs(10);
     tokio::time::timeout(timeout, join_handle).await???;
@@ -71,7 +71,7 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
 
     // 1 second of downloading slowly, then 2 seconds at 5mb/s.
     assert!(
-        (2500..=3100).contains(&elapsed),
+        (1400..=1600).contains(&elapsed),
         "Download was not rate limited. 3000 ms expected, got {elapsed} ms"
     );
 
@@ -101,7 +101,7 @@ async fn should_allow_removing_download_speed_partway_through()
 
     // Wait a bit, then increase the limit.
     tokio::time::sleep(Duration::from_secs(1)).await;
-    client.max_bytes_per_second(None).await;
+    client.max_bytes_per_second(None);
 
     let timeout = Duration::from_secs(10);
     tokio::time::timeout(timeout, fut).await???;

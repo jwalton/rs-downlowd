@@ -151,10 +151,8 @@ impl Client {
     /// Update the maximum bytes per second that can be downloaded. This limit
     /// is shared across all downloads using this client. Setting this to `None`
     /// removes any rate limit.
-    pub async fn max_bytes_per_second(&self, max_bytes_per_second: Option<u64>) {
-        self.limiter
-            .set_max_bytes_per_second(max_bytes_per_second)
-            .await;
+    pub fn max_bytes_per_second(&self, max_bytes_per_second: Option<u64>) {
+        self.limiter.set_max_bytes_per_second(max_bytes_per_second);
     }
 }
 

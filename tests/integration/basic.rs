@@ -200,7 +200,7 @@ async fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::erro
         .build()?;
 
     // Update the client settings.
-    client.max_bytes_per_second(Some(1024 * 1024)).await;
+    client.max_bytes_per_second(Some(1024 * 1024));
 
     let _download = client
         .download(url)

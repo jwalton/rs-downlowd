@@ -1,51 +1,38 @@
-use std::{sync::atomic::AtomicBool, time::Duration};
+use std::sync::Arc;
 
+use arc_swap::ArcSwap;
 use tokio::select;
 
-use crate::limiter::LeakyBucket;
+use crate::limiter::TokenBucket;
 
 // Default rate limit. This is only ever set when the limiter is disabled.
 const DEFAULT_MAX_BYTES_PER_SECOND: u64 = 1024 * 1024 * 1024; // 1 GB/s
 
 pub struct TokioLimiter {
-    enabled: AtomicBool,
-    broadcast: tokio::sync::broadcast::Sender<()>,
-    limiter: std::sync::Mutex<LeakyBucket>,
+    max_bytes_per_second: ArcSwap<Option<u64>>,
+    notify: tokio::sync::Notify,
+    limiter: tokio::sync::Mutex<TokenBucket>,
 }
 
 impl TokioLimiter {
     /// Create a new TokioLimiter with the given maximum bytes per second.
     pub fn new(max_bytes_per_second: Option<u64>) -> Self {
-        let enabled = max_bytes_per_second.is_some();
-        let bucket = LeakyBucket::new(max_bytes_per_second.unwrap_or(DEFAULT_MAX_BYTES_PER_SECOND)); // Default to 1 MB/s
+        let bucket = TokenBucket::new(max_bytes_per_second.unwrap_or(DEFAULT_MAX_BYTES_PER_SECOND)); // Default to 1 MB/s
 
         TokioLimiter {
-            enabled: AtomicBool::new(enabled),
-            broadcast: tokio::sync::broadcast::channel(1).0,
-            limiter: std::sync::Mutex::new(bucket),
+            max_bytes_per_second: ArcSwap::from_pointee(max_bytes_per_second),
+            notify: tokio::sync::Notify::new(),
+            limiter: tokio::sync::Mutex::new(bucket),
         }
     }
 
     /// Update the maximum bytes per second that can be downloaded.
-    pub async fn set_max_bytes_per_second(&self, max_bytes_per_second: Option<u64>) {
-        {
-            let mut limiter = self.limiter.lock().unwrap();
-            limiter.max_bytes_per_second =
-                max_bytes_per_second.unwrap_or(DEFAULT_MAX_BYTES_PER_SECOND);
-        }
-
-        let enabled = max_bytes_per_second.map(|v| v > 0).unwrap_or(false);
-
-        self.enabled
-            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    pub fn set_max_bytes_per_second(&self, max_bytes_per_second: Option<u64>) {
+        self.max_bytes_per_second
+            .swap(Arc::new(max_bytes_per_second));
 
         // Notify any waiters that the limit has changed.
-        _ = self.broadcast.send(());
-    }
-
-    /// Return true if the limiter is enabled.
-    fn is_enabled(&self) -> bool {
-        self.enabled.load(std::sync::atomic::Ordering::Relaxed)
+        self.notify.notify_one();
     }
 
     /// Call this method when bytes have been consumed. If we try to consume bytes
@@ -54,27 +41,34 @@ impl TokioLimiter {
     ///
     /// Returns the time spent waiting.
     pub async fn bytes_consumed(&self, bytes: u64, complete: bool) {
-        if self.is_enabled() {
-            let mut receiver = self.broadcast.subscribe();
-            let _ = self.get_delay(bytes);
+        if let Some(max_bps) = self.max_bytes_per_second.load().as_ref() {
+            let mut limiter = self.limiter.lock().await;
+            limiter.max_bytes_per_second = *max_bps;
+            limiter.bytes_consumed(bytes);
 
             // If there's still bytes left to download, then wait for the limiter
             // to tell us we can continue, but if we've already downloaded the
             // whole file, there's not much point waiting around.
             if !complete {
-                while let Some(delay) = self.get_delay(0) {
+                while let Some(delay) = limiter.time_to_wait() {
+                    println!("jwalton - Sleeping for {delay:?}");
                     select! {
                         _ = tokio::time::sleep(delay) => {}
-                        _ = receiver.recv() => {}
+                        _ = self.notify.notified() => {
+                            match self.max_bytes_per_second.load().as_ref() {
+                                Some(max_bps) => {
+                                    limiter.max_bytes_per_second = *max_bps;
+                                }
+                                None => {
+                                    break;
+                                }
+                            }
+                            println!("jwalton - Woke early");
+                        }
                     };
                 }
             }
         }
-    }
-
-    fn get_delay(&self, bytes: u64) -> Option<Duration> {
-        let mut limiter = self.limiter.lock().unwrap();
-        limiter.bytes_consumed(bytes)
     }
 }
 
