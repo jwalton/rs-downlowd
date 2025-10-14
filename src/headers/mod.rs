@@ -1,23 +1,19 @@
 use std::borrow::Cow;
 
-use http::HeaderName;
-use reqwest::Response;
+use http::{HeaderMap, HeaderName};
 
 mod content_range;
 
 pub use content_range::*;
 
 /// Retrieves a header value as a string slice.
-fn get_header_str<'a>(response: &'a Response, name: &HeaderName) -> Option<&'a str> {
-    response
-        .headers()
-        .get(name)
-        .and_then(|value| value.to_str().ok())
+fn get_header_str<'a>(headers: &'a HeaderMap, name: &HeaderName) -> Option<&'a str> {
+    headers.get(name).and_then(|value| value.to_str().ok())
 }
 
 /// Parses the `Content-Length` header value into a `u64`.
-pub fn parse_content_length(response: &Response) -> Option<u64> {
-    get_header_str(response, &reqwest::header::CONTENT_LENGTH).and_then(parse_content_length_str)
+pub fn parse_content_length(headers: &HeaderMap) -> Option<u64> {
+    get_header_str(headers, &reqwest::header::CONTENT_LENGTH).and_then(parse_content_length_str)
 }
 
 fn parse_content_length_str(value: &str) -> Option<u64> {
@@ -25,8 +21,8 @@ fn parse_content_length_str(value: &str) -> Option<u64> {
 }
 
 /// Parses the filename from the `Content-Disposition` header.
-pub fn parse_content_disposition(response: &'_ Response) -> Option<Cow<'_, str>> {
-    get_header_str(response, &reqwest::header::CONTENT_DISPOSITION)
+pub fn parse_content_disposition(headers: &'_ HeaderMap) -> Option<Cow<'_, str>> {
+    get_header_str(headers, &reqwest::header::CONTENT_DISPOSITION)
         .and_then(parse_content_disposition_str)
 }
 
@@ -49,13 +45,13 @@ fn parse_content_disposition_str(value: &'_ str) -> Option<Cow<'_, str>> {
     result
 }
 
-pub fn etag(response: &Response) -> Option<&str> {
-    get_header_str(response, &reqwest::header::ETAG)
+pub fn etag(headers: &HeaderMap) -> Option<&str> {
+    get_header_str(headers, &reqwest::header::ETAG)
 }
 
 /// Returns the value of the last_modified header, if present.
-pub fn get_last_modified(response: &Response) -> Option<&str> {
-    get_header_str(response, &reqwest::header::LAST_MODIFIED)
+pub fn get_last_modified(headers: &HeaderMap) -> Option<&str> {
+    get_header_str(headers, &reqwest::header::LAST_MODIFIED)
 }
 
 #[cfg(test)]

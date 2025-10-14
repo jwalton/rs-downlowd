@@ -1,4 +1,4 @@
-use reqwest::Response;
+use http::HeaderMap;
 
 use crate::headers::get_header_str;
 
@@ -15,8 +15,8 @@ pub struct ContentRange {
 }
 
 /// Parse the `Content-Range` header.
-pub fn parse_content_range(response: &Response) -> Option<ContentRange> {
-    get_header_str(response, &reqwest::header::CONTENT_RANGE).and_then(ContentRange::from_str)
+pub fn parse_content_range(headers: &HeaderMap) -> Option<ContentRange> {
+    get_header_str(headers, &reqwest::header::CONTENT_RANGE).and_then(ContentRange::from_str)
 }
 
 impl ContentRange {

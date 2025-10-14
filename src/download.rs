@@ -240,7 +240,9 @@ impl Download {
 
     async fn head(&mut self) -> Result<&Head, Error> {
         if self.head.is_none() {
-            let head = Head::create(&self.client, &self.url, self.headers.clone()).await?;
+            let head = Head::create(&self.client, &self.url, self.headers.clone())
+                .await
+                .unwrap_or_default();
             self.head = Some(head);
         }
         Ok(self.head.as_ref().unwrap())
@@ -458,7 +460,8 @@ impl DownloadInner {
         if response.status().as_u16() == 416 {
             // The server thinks the range we requested is not satisfiable. Nginx will return this if, for example,
             // we have the whole file already and we're effectively asking for zero bytes.
-            if let Some(total) = headers::parse_content_range(&response).and_then(|cr| cr.total)
+            if let Some(total) =
+                headers::parse_content_range(response.headers()).and_then(|cr| cr.total)
                 && self.progress.bytes == total
             {
                 // We already have the whole file!
@@ -475,7 +478,11 @@ impl DownloadInner {
         // If the server returns a "206 - Partial content", we're resuming the download,
         // so we should append to the existing file.  Otherwise, we should overwrite it.
         let append = response.status().as_u16() == 206; // Partial content
-        let remote_file_info = FileInfo::from_reqwest_response(&response, self.progress.bytes);
+        let remote_file_info = FileInfo::from_response(
+            response.status().as_u16(),
+            response.headers(),
+            self.progress.bytes,
+        );
 
         if append {
             // If we're trying to append to an existing file, but the file has changed on

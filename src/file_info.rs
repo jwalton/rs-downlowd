@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use http::HeaderMap;
+
 use crate::{Error, headers};
 
 const FILE_LENGTH_TAG: &str = "File-Length";
@@ -15,23 +17,19 @@ pub struct FileInfo {
 }
 
 impl FileInfo {
-    /// Create a FileInfo from a reqwest response.  local_file_size can be 0 if
+    /// Create a FileInfo from an HTTP response.  local_file_size can be 0 if
     /// we are not resuming a download.
-    pub fn from_reqwest_response(response: &reqwest::Response, local_file_size: u64) -> Self {
-        let local_file_size = if response.status().as_u16() == 206 {
-            local_file_size
-        } else {
-            0
-        };
+    pub fn from_response(status: u16, headers: &HeaderMap, local_file_size: u64) -> Self {
+        let local_file_size = if status == 206 { local_file_size } else { 0 };
 
-        let file_length = headers::parse_content_range(response)
+        let file_length = headers::parse_content_range(headers)
             .and_then(|cr| cr.total)
-            .or_else(|| headers::parse_content_length(response).map(|len| len + local_file_size));
+            .or_else(|| headers::parse_content_length(headers).map(|len| len + local_file_size));
 
         FileInfo {
             file_length,
-            last_modified: headers::get_last_modified(response).map(str::to_string),
-            etag: headers::etag(response).map(str::to_string),
+            last_modified: headers::get_last_modified(headers).map(str::to_string),
+            etag: headers::etag(headers).map(str::to_string),
         }
     }
 
@@ -247,7 +245,7 @@ Etag: abc123
         .await;
 
         assert_eq!(
-            FileInfo::from_reqwest_response(&response, 0),
+            FileInfo::from_response(response.status().as_u16(), response.headers(), 0),
             FileInfo {
                 file_length: Some(6),
                 last_modified: Some("2023-10-01T12:34:56Z".to_string()),
@@ -270,7 +268,7 @@ Etag: abc123
         .await;
 
         assert_eq!(
-            FileInfo::from_reqwest_response(&response, 5),
+            FileInfo::from_response(response.status().as_u16(), response.headers(), 5),
             FileInfo {
                 file_length: Some(11),
                 last_modified: Some("2023-10-01T12:34:56Z".to_string()),
@@ -294,7 +292,7 @@ Etag: abc123
         .await;
 
         assert_eq!(
-            FileInfo::from_reqwest_response(&response, 5),
+            FileInfo::from_response(response.status().as_u16(), response.headers(), 5),
             FileInfo {
                 // Should trust the content-range total over content-length + local_file_size.
                 file_length: Some(300),
