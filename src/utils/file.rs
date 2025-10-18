@@ -6,8 +6,6 @@
 
 use std::path::{Path, PathBuf};
 
-use tokio::io::AsyncSeekExt;
-
 use crate::Error;
 
 // Add an extension to a path. If the path already has an extension, the new
@@ -52,6 +50,8 @@ pub fn open_file_for_writing(part_file: &Path) -> Result<std::fs::File, Error> {
     Ok(file)
 }
 
+/// Open a file for writing.
+#[cfg(feature = "async")]
 pub async fn open_file_for_writing_async(part_file: &Path) -> Result<tokio::fs::File, Error> {
     let part_file = part_file.to_owned();
     let file = tokio::task::spawn_blocking(move || open_file_for_writing(&part_file))
@@ -61,6 +61,7 @@ pub async fn open_file_for_writing_async(part_file: &Path) -> Result<tokio::fs::
 }
 
 /// Returns true if the path exists and is a directory.
+#[cfg(feature = "async")]
 pub async fn is_dir_async(path: &Path) -> bool {
     tokio::fs::metadata(path)
         .await
@@ -68,6 +69,8 @@ pub async fn is_dir_async(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Returns the length of the given file.
+#[cfg(feature = "async")]
 pub async fn get_file_length_async(file: &mut tokio::fs::File, path: &Path) -> Result<u64, Error> {
     let metadata = file.metadata().await.map_err(|e| Error::Write {
         action: "getting file metadata",
@@ -79,7 +82,10 @@ pub async fn get_file_length_async(file: &mut tokio::fs::File, path: &Path) -> R
 }
 
 /// Truncate the file to zero length and seek to the start.
+#[cfg(feature = "async")]
 pub async fn truncate_file_async(filename: &Path, file: &mut tokio::fs::File) -> Result<(), Error> {
+    use tokio::io::AsyncSeekExt;
+
     file.set_len(0).await.map_err(|e| Error::Write {
         action: "truncating file",
         path: filename.to_path_buf(),
@@ -87,6 +93,24 @@ pub async fn truncate_file_async(filename: &Path, file: &mut tokio::fs::File) ->
     })?;
     file.seek(std::io::SeekFrom::Start(0))
         .await
+        .map_err(|e| Error::Write {
+            action: "seeking to start of file",
+            path: filename.to_path_buf(),
+            cause: e,
+        })?;
+    Ok(())
+}
+
+#[cfg(feature = "blocking")]
+pub fn truncate_file(filename: &Path, file: &mut std::fs::File) -> Result<(), Error> {
+    use std::io::Seek;
+
+    file.set_len(0).map_err(|e| Error::Write {
+        action: "truncating file",
+        path: filename.to_path_buf(),
+        cause: e,
+    })?;
+    file.seek(std::io::SeekFrom::Start(0))
         .map_err(|e| Error::Write {
             action: "seeking to start of file",
             path: filename.to_path_buf(),

@@ -1,9 +1,13 @@
+use std::time::Duration;
+
 use httptest::{
     Expectation, Server,
     matchers::{contains, request},
     responders,
 };
 use temp_dir::TempDir;
+
+use crate::ClientBuilder;
 
 use super::*;
 

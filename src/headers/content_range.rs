@@ -16,7 +16,7 @@ pub struct ContentRange {
 
 /// Parse the `Content-Range` header.
 pub fn parse_content_range(headers: &HeaderMap) -> Option<ContentRange> {
-    get_header_str(headers, &reqwest::header::CONTENT_RANGE).and_then(ContentRange::from_str)
+    get_header_str(headers, &http::header::CONTENT_RANGE).and_then(ContentRange::from_str)
 }
 
 impl ContentRange {

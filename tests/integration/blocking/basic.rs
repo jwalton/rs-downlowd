@@ -1,6 +1,6 @@
-use std::time::Duration;
+use std::{fs, time::Duration};
 
-use downlowd::Client;
+use downlowd::blocking::Client;
 use http::HeaderMap;
 use temp_dir::TempDir;
 
@@ -11,22 +11,22 @@ use crate::integration::{
 
 const MESSAGE: &str = "hello world";
 
-#[tokio::test]
-async fn should_get_the_name_of_the_file() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn should_get_the_name_of_the_file() -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}/hello.txt");
 
     let mut download = Client::new().download(&url);
-    assert_eq!(download.get_remote_file_name().await, "hello.txt");
+    assert_eq!(download.get_remote_file_name(), "hello.txt");
     Ok(())
 }
 
-#[tokio::test]
-async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path();
 
-    let head = utils::head_url(&url).await;
+    let head = utils::head_url(&url);
 
     let recorder = ProgressRecorder::new();
 
@@ -43,8 +43,7 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
 
                 recorder.record_progress(p);
             })
-            .send()
-            .await?
+            .send()?
     };
 
     assert_eq!(
@@ -62,20 +61,20 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     assert_eq!(&result.path, &destination.join("hello.txt"));
-    let file_contents = tokio::fs::read_to_string(&result.path).await?;
+    let file_contents = fs::read_to_string(&result.path)?;
     assert_eq!(file_contents, MESSAGE);
     assert_eq!(result.bytes_downloaded, MESSAGE.len() as u64);
 
     Ok(())
 }
 
-#[tokio::test]
-async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
-    tokio::fs::write(&destination, MESSAGE).await?;
+    fs::write(&destination, MESSAGE)?;
 
     let client = Client::new();
     let result = client
@@ -88,40 +87,35 @@ async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::err
                 progress.total_bytes().unwrap()
             );
         })
-        .send()
-        .await?;
+        .send()?;
 
     assert_eq!(&result.path, &destination);
-    let file_contents = tokio::fs::read_to_string(&result.path).await?;
+    let file_contents = fs::read_to_string(&result.path)?;
     assert_eq!(file_contents, MESSAGE);
     assert_eq!(result.bytes_downloaded, 0);
 
     Ok(())
 }
 
-#[tokio::test]
-async fn should_not_skip_a_file_if_the_size_is_wrong() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn should_not_skip_a_file_if_the_size_is_wrong() -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
-    tokio::fs::write(&destination, "a").await?;
+    fs::write(&destination, "a")?;
 
     let client = Client::new();
-    let result = client
-        .download(&url)
-        .destination(&destination)
-        .send()
-        .await?;
+    let result = client.download(&url).destination(&destination).send()?;
 
-    let file_contents = tokio::fs::read_to_string(&result.path).await?;
+    let file_contents = fs::read_to_string(&result.path)?;
     assert_eq!(file_contents, MESSAGE);
 
     Ok(())
 }
 
-#[tokio::test]
-async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}/i.do.not.exist");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
@@ -136,8 +130,7 @@ async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
         .on_progress(move |_| {
             panic!("Should not call progress handler on 404");
         })
-        .send()
-        .await;
+        .send();
 
     let err = result.err().unwrap();
     assert_eq!(format!("{}", err), "Unexpected response status: 404");
@@ -145,8 +138,8 @@ async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[tokio::test]
-async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}{}", utils::big_file_url(10 * 1024 * 1024));
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
@@ -163,32 +156,27 @@ async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::
             }
         })
         .send()
-        .await
         .unwrap_err();
 
     println!("Error: {result} for {url}");
     assert!(matches!(result, downlowd::Error::Cancelled));
-    let file_size = tokio::fs::metadata(&part_file).await?.len();
+    let file_size = fs::metadata(&part_file)?.len();
     println!("file_size: {file_size}");
     assert!(file_size > 1_000_000);
     assert!(file_size < 10 * 1024 * 1024);
 
     // Continue the download.
-    let result = client
-        .download(&url)
-        .destination(&destination)
-        .send()
-        .await?;
+    let result = client.download(&url).destination(&destination).send()?;
 
     assert_eq!(&result.path, &destination);
-    let file_size = tokio::fs::metadata(&destination).await?.len();
+    let file_size = fs::metadata(&destination)?.len();
     assert_eq!(file_size, 10 * 1024 * 1024);
 
     Ok(())
 }
 
-#[tokio::test]
-async fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}/hello.txt");
 
     let client = Client::builder()

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use url::Url;
 
-use crate::{destination::Destination, file_info::FileInfo};
+use crate::{Error, destination::Destination, file_info::FileInfo};
 
 pub struct ProgressHandle {
     /// The original URL we are downloading from.
@@ -49,6 +49,7 @@ impl Progress for Box<dyn Progress> {
 }
 
 impl ProgressHandle {
+    #[must_use]
     pub(crate) fn new(
         original_url: Url,
         updated_url: Option<Url>,
@@ -70,6 +71,7 @@ impl ProgressHandle {
     }
 
     /// Reset progress and local_file_info before restarting a download.
+    #[cfg(feature = "async")]
     pub(crate) async fn reset(&mut self) {
         self.bytes = 0;
         // Reset the local file info. It'll get filled in again
@@ -79,12 +81,40 @@ impl ProgressHandle {
             .await;
     }
 
+    /// Reset progress and local_file_info before restarting a download.
+    #[cfg(feature = "blocking")]
+    pub(crate) fn reset_blocking(&mut self) {
+        self.bytes = 0;
+        self.local_file_info
+            .reset_blocking(&self.destination.sidecar_file);
+    }
+
     /// Returns true if we have the entire file already downloaded.
+    #[must_use]
     pub(crate) fn is_complete(&self) -> Option<bool> {
-        self.local_file_info.file_length.map(|len| self.bytes == len)
+        self.local_file_info
+            .file_length
+            .map(|len| self.bytes == len)
+    }
+
+    /// Notify the given progress handler with this progress object.
+    pub(crate) fn notify(
+        &mut self,
+        progress_handler: &mut Option<Box<dyn Progress + Send>>,
+    ) -> Result<(), Error> {
+        if let Some(handler) = progress_handler.as_mut() {
+            handler.progress(self);
+        }
+
+        if self.cancelled {
+            return Err(Error::Cancelled);
+        }
+
+        Ok(())
     }
 
     /// Returns the original URL we are downloading from.
+    #[must_use]
     pub fn original_url(&self) -> &Url {
         &self.original_url
     }
@@ -92,11 +122,13 @@ impl ProgressHandle {
     /// Returns the URL we are downloading from.  Note that if we followed a
     /// redirect, this may be different from the original URL.  If you are
     /// looking for the URL that was supplied by the user, see `original_url()`.
+    #[must_use]
     pub fn url(&self) -> &Url {
         self.updated_url.as_ref().unwrap_or(&self.original_url)
     }
 
     /// Returns the final path we are downloading to.
+    #[must_use]
     pub fn destination(&self) -> &Path {
         &self.destination.path
     }
@@ -104,23 +136,27 @@ impl ProgressHandle {
     /// Returns the total number of tries so far to download this file.  Note that
     /// the retry count is reset every time we make progress downloading the file,
     /// so this number may be higher than the maximum number of retries allowed.
+    #[must_use]
     pub fn tries(&self) -> u64 {
         self.tries
     }
 
     /// Returns the number of bytes transferred since the last time the progress
     /// handler was called.
+    #[must_use]
     pub fn delta(&self) -> u64 {
         self.delta
     }
 
     /// Returns the size of the local file on disk, including any bytes downloaded
     /// in a previous partial download.
+    #[must_use]
     pub fn bytes(&self) -> u64 {
         self.bytes
     }
 
     /// Returns the size of the file on the server, if known.
+    #[must_use]
     pub fn total_bytes(&self) -> Option<u64> {
         self.local_file_info.file_length
     }
@@ -132,11 +168,13 @@ impl ProgressHandle {
     }
 
     /// Return the etag for the file, if known.
+    #[must_use]
     pub fn etag(&self) -> Option<&str> {
         self.local_file_info.etag.as_deref()
     }
 
     /// Return the last modified time for the file, if known.
+    #[must_use]
     pub fn last_modified(&self) -> Option<&str> {
         self.local_file_info.last_modified.as_deref()
     }

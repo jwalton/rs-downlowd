@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::{io, path::Path};
 
-use http::HeaderMap;
+use http::{HeaderMap, StatusCode};
 
 use crate::{Error, headers};
 
@@ -19,8 +19,12 @@ pub struct FileInfo {
 impl FileInfo {
     /// Create a FileInfo from an HTTP response.  local_file_size can be 0 if
     /// we are not resuming a download.
-    pub fn from_response(status: u16, headers: &HeaderMap, local_file_size: u64) -> Self {
-        let local_file_size = if status == 206 { local_file_size } else { 0 };
+    pub fn from_response(status: StatusCode, headers: &HeaderMap, local_file_size: u64) -> Self {
+        let local_file_size = if status == StatusCode::PARTIAL_CONTENT {
+            local_file_size
+        } else {
+            0
+        };
 
         let file_length = headers::parse_content_range(headers)
             .and_then(|cr| cr.total)
@@ -89,8 +93,24 @@ impl FileInfo {
     }
 
     /// Load the FileInfo from a sidecar file, if it exists.
+    #[cfg(feature = "async")]
     pub async fn load(&mut self, sidecar_file: &Path) -> Result<(), Error> {
         let contents = tokio::fs::read_to_string(sidecar_file).await;
+        self.load_from(sidecar_file, contents)
+    }
+
+    /// Load the FileInfo from a sidecar file, if it exists.
+    #[cfg(feature = "blocking")]
+    pub fn load_blocking(&mut self, sidecar_file: &Path) -> Result<(), Error> {
+        let contents = std::fs::read_to_string(sidecar_file);
+        self.load_from(sidecar_file, contents)
+    }
+
+    fn load_from(
+        &mut self,
+        sidecar_file: &Path,
+        contents: Result<String, io::Error>,
+    ) -> Result<(), Error> {
         match contents {
             Ok(contents) => self.deserialize(&contents),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -103,16 +123,33 @@ impl FileInfo {
     }
 
     /// Write the FileInfo to a sidecar file.
+    #[cfg(feature = "async")]
     pub async fn save(&self, sidecar_file: &Path) {
         let _ = tokio::fs::write(sidecar_file, self.serialize()).await;
     }
 
+    /// Write the FileInfo to a sidecar file.
+    #[cfg(feature = "blocking")]
+    pub fn save_blocking(&self, sidecar_file: &Path) {
+        let _ = std::fs::write(sidecar_file, self.serialize());
+    }
+
     /// Reset the FileInfo and delete the sidecar file.
+    #[cfg(feature = "async")]
     pub async fn reset(&mut self, sidecar_file: &Path) {
         self.file_length = None;
         self.last_modified = None;
         self.etag = None;
         let _ = tokio::fs::remove_file(sidecar_file).await;
+    }
+
+    /// Reset the FileInfo and delete the sidecar file.
+    #[cfg(feature = "blocking")]
+    pub fn reset_blocking(&mut self, sidecar_file: &Path) {
+        self.file_length = None;
+        self.last_modified = None;
+        self.etag = None;
+        let _ = std::fs::remove_file(sidecar_file);
     }
 
     /// When called on local file info, returns an error if the passed in remote file
@@ -150,7 +187,6 @@ impl FileInfo {
         ) {
             (Some(local_last_modified), Some(remote_last_modified)) => {
                 if local_last_modified != remote_last_modified {
-                    // TODO: If we already verified the etag, should we skip this error?
                     return Err(Error::FileChanged {
                         description: "last-modified changed",
                     });
@@ -187,7 +223,7 @@ impl FileInfo {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::http_test::make_reqwest_response;
+    use http::{HeaderName, HeaderValue};
 
     use super::*;
 
@@ -195,6 +231,14 @@ mod tests {
 Last-Modified: 2023-10-01T12:34:56Z
 Etag: abc123
 "#;
+
+    fn make_header_map(headers: &[(&'static str, &'static str)]) -> HeaderMap {
+        let mut result = HeaderMap::new();
+        for (h, v) in headers {
+            result.append(HeaderName::from_static(h), HeaderValue::from_static(v));
+        }
+        result
+    }
 
     #[test]
     fn test_serialize_serialize() {
@@ -231,21 +275,17 @@ Etag: abc123
         assert_eq!(info.etag, None);
     }
 
-    #[tokio::test]
-    async fn should_read_from_response() {
-        let response = make_reqwest_response(
-            200,
-            &[
-                ("content-length", "6"),
-                ("last-modified", "2023-10-01T12:34:56Z"),
-                ("etag", "foo"),
-            ],
-            "abcdef",
-        )
-        .await;
+    #[test]
+    fn should_read_from_response() {
+        let status = StatusCode::OK;
+        let headers = make_header_map(&[
+            ("content-length", "6"),
+            ("last-modified", "2023-10-01T12:34:56Z"),
+            ("etag", "foo"),
+        ]);
 
         assert_eq!(
-            FileInfo::from_response(response.status().as_u16(), response.headers(), 0),
+            FileInfo::from_response(status, &headers, 0),
             FileInfo {
                 file_length: Some(6),
                 last_modified: Some("2023-10-01T12:34:56Z".to_string()),
@@ -254,21 +294,17 @@ Etag: abc123
         );
     }
 
-    #[tokio::test]
-    async fn should_read_from_response_for_206() {
-        let response = make_reqwest_response(
-            206,
-            &[
-                ("content-length", "6"),
-                ("last-modified", "2023-10-01T12:34:56Z"),
-                ("etag", "foo"),
-            ],
-            "abcdef",
-        )
-        .await;
+    #[test]
+    fn should_read_from_response_for_206() {
+        let status = StatusCode::PARTIAL_CONTENT;
+        let headers = make_header_map(&[
+            ("content-length", "6"),
+            ("last-modified", "2023-10-01T12:34:56Z"),
+            ("etag", "foo"),
+        ]);
 
         assert_eq!(
-            FileInfo::from_response(response.status().as_u16(), response.headers(), 5),
+            FileInfo::from_response(status, &headers, 5),
             FileInfo {
                 file_length: Some(11),
                 last_modified: Some("2023-10-01T12:34:56Z".to_string()),
@@ -277,22 +313,18 @@ Etag: abc123
         );
     }
 
-    #[tokio::test]
-    async fn should_read_from_response_for_206_with_content_range() {
-        let response = make_reqwest_response(
-            206,
-            &[
-                ("content-length", "6"),
-                ("content-range", "bytes 5-10/300"),
-                ("last-modified", "2023-10-01T12:34:56Z"),
-                ("etag", "foo"),
-            ],
-            "abcdef",
-        )
-        .await;
+    #[test]
+    fn should_read_from_response_for_206_with_content_range() {
+        let status = StatusCode::PARTIAL_CONTENT;
+        let headers = make_header_map(&[
+            ("content-length", "6"),
+            ("content-range", "bytes 5-10/300"),
+            ("last-modified", "2023-10-01T12:34:56Z"),
+            ("etag", "foo"),
+        ]);
 
         assert_eq!(
-            FileInfo::from_response(response.status().as_u16(), response.headers(), 5),
+            FileInfo::from_response(status, &headers, 5),
             FileInfo {
                 // Should trust the content-range total over content-length + local_file_size.
                 file_length: Some(300),

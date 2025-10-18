@@ -1,3 +1,8 @@
+use std::time::Duration;
+
+use crate::{Error, DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY};
+
+/// Callback function to invoke when trying a download.
 pub type RetryHandler = Box<dyn FnMut(&mut RetryHandle) + Send>;
 
 /// Handle passed to the `on_retry` callback.
@@ -60,5 +65,19 @@ impl RetryHandle {
     /// that caused the retry.
     pub fn cancel(&mut self) {
         self.cancelled = true;
+    }
+}
+
+/// Default callback used for determining backoff delay between retries.
+pub fn default_retry_callback(handle: &mut RetryHandle) {
+    if matches!(handle.error(), Error::FileChanged { .. }) {
+        // No delay if the file changed.
+        handle.set_delay(Duration::ZERO);
+    } else {
+        handle.set_delay(crate::exponential_backoff(
+            DEFAULT_MIN_DELAY,
+            DEFAULT_MAX_DELAY,
+            handle.retries(),
+        ));
     }
 }

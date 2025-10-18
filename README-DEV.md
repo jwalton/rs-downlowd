@@ -7,4 +7,6 @@ Integration tests rely on a local copy of nginx running. There's a docker-compos
 ```sh
 cd ./test-support
 docker-compose up
+cargo test
+cargo test --no-default-features -F blocking -- blocking
 ```

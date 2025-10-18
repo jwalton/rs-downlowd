@@ -1,0 +1,82 @@
+use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
+
+use crate::{
+    DEFAULT_MAX_RETRIES, Error,
+    utils::{self, http::append_header},
+};
+
+/// Builder for creating a `Client` with custom configuration.
+pub struct ClientBuilder {
+    pub(crate) user_agent: Option<String>,
+    pub(crate) headers: HeaderMap,
+    pub(crate) default_max_retries: Option<u64>,
+    pub(crate) max_bytes_per_second: Option<u64>,
+    pub(crate) err: Option<Error>,
+}
+
+impl ClientBuilder {
+    /// Create a new ClientBuilder with the given user agent.
+    pub fn new() -> Self {
+        ClientBuilder {
+            user_agent: None,
+            headers: HeaderMap::new(),
+            default_max_retries: DEFAULT_MAX_RETRIES,
+            max_bytes_per_second: None,
+            err: None,
+        }
+    }
+
+    /// Set the user agent for the client.
+    pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        self.user_agent = Some(user_agent.into());
+        self
+    }
+
+    /// Add a default header for every request.
+    pub fn header<K, V>(mut self, key: K, value: V) -> Self
+    where
+        K: IntoHeaderName,
+        HeaderValue: TryFrom<V>,
+        <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+    {
+        if let Err(e) = append_header(&mut self.headers, key, value) {
+            self.err = Some(e);
+        }
+
+        self
+    }
+
+    /// Set the default headers for every request.
+    pub fn headers(mut self, headers: HeaderMap) -> Self {
+        utils::http::append_all_headers(&mut self.headers, headers);
+        self
+    }
+
+    /// Set the default maxmimum number of times to consecutively retry a download
+    /// without making any progress. The default is 5. This counter resets whenever
+    /// at least one byte of data is downloaded from the server. Pass in `None`
+    /// to retry forever.
+    pub fn max_retries(mut self, max_retries: Option<u64>) -> Self {
+        self.default_max_retries = max_retries;
+        self
+    }
+
+    /// Set the maximum bytes per second that can be downloaded. This limit is
+    /// shared across all downloads using this client.
+    pub fn max_bytes_per_second(mut self, max: Option<u64>) -> Self {
+        if max == Some(0) {
+            self.err = Some(Error::InvalidConfig {
+                message: "max_bytes_per_second must be greater than 0".to_string(),
+            });
+        } else {
+            self.max_bytes_per_second = max;
+        }
+        self
+    }
+}
+
+impl Default for ClientBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -1,6 +1,6 @@
 # downlowd
 
-Downloading a file is easy. Just make an HTTP request, and write the results to a file, right? There's actually a lot more to consider. `downlowd` supports:
+Downloading a file is easy. Just make an HTTP request, and write the results to a file, right? That works, but it doesn't cover a lot of corner cases. `downlowd` supports:
 
 - Streaming the file to disk, instead of downloading it to memory and then writing it to disk. This is both faster and far more memory efficient for large files.
 - Progress callback for displaying progress bar.
@@ -9,10 +9,16 @@ Downloading a file is easy. Just make an HTTP request, and write the results to 
 - Automatic retries for flakey network connections and servers, with exponential backoff.
 - Uses `content-disposition` header to retrieve the name of the file.
 - Support for bandwidth restrictions.
+- [Blocking client](./blocking) which is based on [ureq](https://docs.rs/ureq/latest/ureq/) so the blocking case doesn't depend on reqwest or tokio, making a smaller executable and faster build times.
 
 ## Documentation
 
-See [the documentation at docs.rs](https://docs.rs/syn/latest/syn/).
+See [the documentation at docs.rs](https://docs.rs/downlowd/latest/downlowd/).
+
+## Crate Features
+
+- **async** - Enabled by default. Provides [`Client`] for downloading files. This uses [reqwest](https://docs.rs/reqwest/latest/reqwest/) and [tokio](https://tokio.rs/) under the hood.
+- **blocking** - Provides the [`blocking::Client`] for downloading files, which is based on [ureq](https://docs.rs/ureq/latest/ureq/). To use the blocking client, install will `cargo add downlowd --no-default-features -F blocking`.
 
 ## Usage
 
@@ -43,7 +49,7 @@ This is a short example, but it has a lot packed into it. First, since we've pas
 
 If the file already exists, and has the correct length, then `downlowd` will just report success right away! If not, then we'll start downloading the file into a file named `hello.txt.part`. The file will be renamed to `hello.txt` once the download is complete. While the download is in progress, a "sidecar" file named `hello.txt.downloadinfo` will be written alongside the file which will contain cache information about the file (the etag header, the last-modified header, etc...). The sidecar file is used to help determine whether or not a file has changed on the server if the download is interrupted and needs to be resumed.
 
-If there's an error during the download, such as a network error, or the transfer is interrupted, or the server returns a 5xx error, then `downlowd` will automatically retry the file, with an exponential backoff between retries. By default, `downlowd` will retry forever.  Calling `max_retries()` will set a maximum number of tries, but note that `downlowd` will reset the retry counter if any progress is made downloading the file.
+If there's an error during the download, such as a network error, or the transfer is interrupted, or the server returns a 5xx error, then `downlowd` will automatically retry the file, with an exponential backoff between retries. By default, `downlowd` will retry forever. Calling `max_retries()` will set a maximum number of tries, but note that `downlowd` will reset the retry counter if any progress is made downloading the file.
 
 ### Reporting Progress
 

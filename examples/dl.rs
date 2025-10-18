@@ -1,8 +1,12 @@
-use std::{env, path::Path, process};
+#[cfg(not(feature = "async"))]
+fn main () {}
 
-use indicatif::ProgressBar;
-
+#[cfg(feature = "async")]
 fn main() {
+    use std::{env, path::Path, process};
+
+    use indicatif::ProgressBar;
+
     let progress = ProgressBar::no_length();
 
     tokio::runtime::Builder::new_current_thread()

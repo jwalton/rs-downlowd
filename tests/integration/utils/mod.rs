@@ -19,27 +19,26 @@ pub struct BigFile {
     pub url: String,
 }
 
-pub async fn head_url(url: &str) -> HeadData {
-    let http_client = reqwest::Client::new();
-    let response = http_client.head(url).send().await.expect("url to exist");
+pub fn head_url(url: &str) -> HeadData {
+    let response = ureq::head(url).call().expect("url to exist");
 
     assert_eq!(response.status(), 200, "Resource {url} should exist");
 
     let last_modified = response
         .headers()
-        .get(reqwest::header::LAST_MODIFIED)
+        .get(http::header::LAST_MODIFIED)
         .map(|s| s.to_str().expect("valid string").to_owned())
         .unwrap();
 
     let etag = response
         .headers()
-        .get(reqwest::header::ETAG)
+        .get(http::header::ETAG)
         .map(|s| s.to_str().expect("valid string").to_owned())
         .unwrap();
 
     let content_length = response
         .headers()
-        .get(reqwest::header::CONTENT_LENGTH)
+        .get(http::header::CONTENT_LENGTH)
         .map(|s| {
             s.to_str()
                 .expect("valid string")

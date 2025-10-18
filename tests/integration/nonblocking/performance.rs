@@ -8,6 +8,7 @@ use crate::integration::{constants::SERVER_URL, utils};
 
 const ITERATIONS: u32 = 100;
 
+#[cfg(feature = "async")]
 #[tokio::test]
 async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
