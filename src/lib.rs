@@ -18,7 +18,7 @@ pub use backoff::exponential_backoff;
 pub use error::Error;
 pub use handles::{DownloadResult, Progress, ProgressHandle, RetryHandle, RetryHandler};
 pub use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
-pub use utils::into_url::IntoUrl;
+pub use utils::into_uri::IntoUri;
 
 #[cfg(feature = "blocking")]
 pub mod blocking;

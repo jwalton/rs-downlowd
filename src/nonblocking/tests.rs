@@ -120,8 +120,8 @@ async fn should_follow_redirects() -> Result<(), Box<dyn std::error::Error>> {
         .destination(destination)
         .on_progress(move |progress| {
             // Verify the progress handler calims to have followed the redirect.
-            assert_eq!(progress.original_url().to_string(), url.to_string());
-            assert_eq!(progress.url().to_string(), redirect_url.to_string());
+            assert_eq!(progress.original_uri().to_string(), url.to_string());
+            assert_eq!(progress.uri().to_string(), redirect_url.to_string());
         })
         .send()
         .await?;

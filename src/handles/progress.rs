@@ -1,15 +1,15 @@
 use std::path::Path;
 
-use url::Url;
+use http::Uri;
 
 use crate::{Error, destination::Destination, file_info::FileInfo};
 
 pub struct ProgressHandle {
     /// The original URL we are downloading from.
-    pub(crate) original_url: Url,
+    pub(crate) original_uri: Uri,
     /// The URL we are downloading from.  Note that if we followed a redirect,
     /// this may be different from the original URL.
-    pub(crate) updated_url: Option<Url>,
+    pub(crate) updated_uri: Option<Uri>,
     /// The final path we are downloading to.
     pub(crate) destination: Destination,
     /// The total number of tries so far to download this file.
@@ -51,15 +51,15 @@ impl Progress for Box<dyn Progress> {
 impl ProgressHandle {
     #[must_use]
     pub(crate) fn new(
-        original_url: Url,
-        updated_url: Option<Url>,
+        original_uri: Uri,
+        updated_uri: Option<Uri>,
         destination: Destination,
         local_file_info: FileInfo,
         existing_file_length: u64,
     ) -> Self {
         Self {
-            original_url,
-            updated_url,
+            original_uri,
+            updated_uri,
             destination,
             tries: 0,
             bytes_transferred: 0,
@@ -115,16 +115,16 @@ impl ProgressHandle {
 
     /// Returns the original URL we are downloading from.
     #[must_use]
-    pub fn original_url(&self) -> &Url {
-        &self.original_url
+    pub fn original_uri(&self) -> &Uri {
+        &self.original_uri
     }
 
     /// Returns the URL we are downloading from.  Note that if we followed a
     /// redirect, this may be different from the original URL.  If you are
     /// looking for the URL that was supplied by the user, see `original_url()`.
     #[must_use]
-    pub fn url(&self) -> &Url {
-        self.updated_url.as_ref().unwrap_or(&self.original_url)
+    pub fn uri(&self) -> &Uri {
+        self.updated_uri.as_ref().unwrap_or(&self.original_uri)
     }
 
     /// Returns the final path we are downloading to.

@@ -1,14 +1,13 @@
 use std::borrow::Cow;
 
-use http::{HeaderMap, StatusCode};
-use url::Url;
+use http::{HeaderMap, StatusCode, Uri};
 
 use crate::{Error, file_info::FileInfo};
 
 /// Information about a URL fetched with a HEAD request.
 #[derive(Debug, Default)]
 pub struct Head {
-    pub updated_url: Option<Url>,
+    pub updated_uri: Option<Uri>,
     pub remote_file_info: Option<FileInfo>,
     pub filename: Option<String>,
 }
@@ -17,8 +16,8 @@ impl Head {
     pub(crate) fn create_inner(
         status: StatusCode,
         headers: &HeaderMap,
-        url: &Url,
-        updated_url: Option<Url>,
+        uri: &Uri,
+        updated_uri: Option<Uri>,
     ) -> Result<Self, Error> {
         if !status.is_success() {
             return Err(Error::UnexpectedStatus {
@@ -27,7 +26,7 @@ impl Head {
         }
 
         let mut result = Self {
-            updated_url,
+            updated_uri,
             remote_file_info: None,
             filename: None,
         };
@@ -38,7 +37,7 @@ impl Head {
         result.filename = crate::headers::parse_content_disposition(headers)
             .map(Cow::<str>::into_owned)
             .or_else(|| {
-                let url_filename = url.path().split('/').next_back().unwrap();
+                let url_filename = uri.path().split('/').next_back().unwrap();
                 if url_filename.is_empty() {
                     None
                 } else {

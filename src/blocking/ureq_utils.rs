@@ -1,34 +1,22 @@
-use std::str::FromStr;
-
 use http::{HeaderMap, Response, Uri};
 use ureq::{Agent, Body, ResponseExt};
-use url::Url;
 
-use crate::{Error, utils::into_url::IntoUrlSealed};
+use crate::Error;
 
 /// Make a request using ureq.
 pub fn ureq_request(
     agent: &Agent,
     method: http::Method,
-    url: &Url,
+    uri: &Uri,
     headers: &HeaderMap,
-) -> (Option<Url>, Result<Response<Body>, Error>) {
-    let Ok(uri) = Uri::from_str(url.as_str()) else {
-        return (
-            None,
-            Err(Error::InvalidUrl {
-                cause: "could not convert url to uri".to_string(),
-            }),
-        );
-    };
-
+) -> (Option<Uri>, Result<Response<Body>, Error>) {
     let method_name = match method {
         http::Method::GET => "GET",
         http::Method::HEAD => "HEAD",
         _ => "REQUEST",
     };
 
-    let mut request = http::Request::builder().uri(&uri).method(method);
+    let mut request = http::Request::builder().uri(uri).method(method);
     if let Some(h) = request.headers_mut() {
         for (k, v) in headers.iter() {
             h.append(k, v.clone());
@@ -55,7 +43,7 @@ pub fn ureq_request(
         },
         _ => Error::Network {
             during: method_name,
-            url: url.to_string(),
+            uri: uri.to_string(),
             cause: err.to_string(),
         },
     });
@@ -67,8 +55,8 @@ pub fn ureq_request(
         }
     };
 
-    let returned_url = if response.get_uri() != &uri {
-        response.get_uri().to_string().into_url().ok()
+    let returned_url = if response.get_uri() != uri {
+        Some(response.get_uri().to_owned())
     } else {
         None
     };

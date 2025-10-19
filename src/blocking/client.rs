@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    IntoUrl,
+    IntoUri,
     blocking::{BlockingClientBuilder, download::Download, tokenbucket::BlockingTokenBucket},
     client_builder::ClientBuilder,
 };
@@ -56,7 +56,7 @@ impl Client {
     /// # }
     /// ```
     ///
-    pub fn download(&self, url: impl IntoUrl) -> Download {
+    pub fn download(&self, url: impl IntoUri) -> Download {
         Download::new(
             self.agent.clone(),
             self.default_max_retries,

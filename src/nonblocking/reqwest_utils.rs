@@ -1,5 +1,4 @@
-use http::HeaderMap;
-use url::Url;
+use http::{HeaderMap, Uri};
 
 use crate::Error;
 
@@ -8,9 +7,10 @@ use crate::Error;
 pub async fn request(
     client: &reqwest::Client,
     method: reqwest::Method,
-    url: Url,
+    uri: &Uri,
     headers: HeaderMap,
-) -> (Option<Url>, Result<reqwest::Response, Error>) {
+) -> (Option<Uri>, Result<reqwest::Response, Error>) {
+    let url = uri.to_string();
     let method_name = match method {
         reqwest::Method::GET => "GET",
         reqwest::Method::HEAD => "HEAD",
@@ -19,7 +19,7 @@ pub async fn request(
 
     // Reqwest follows redirect automatically.
     let response = client
-        .request(method, url.clone())
+        .request(method, &url)
         .headers(headers)
         .send()
         .await
@@ -31,7 +31,7 @@ pub async fn request(
             } else {
                 Error::Network {
                     during: method_name,
-                    url: url.to_string(),
+                    uri: url.clone(),
                     cause: cause.without_url().to_string(),
                 }
             }
@@ -44,11 +44,12 @@ pub async fn request(
         }
     };
 
-    let returned_url = if response.url() != &url {
-        Some(response.url().clone())
+    let response_url = response.url().as_str();
+    let returned_uri = if response_url != url {
+        response_url.parse::<Uri>().ok()
     } else {
         None
     };
 
-    (returned_url, Ok(response))
+    (returned_uri, Ok(response))
 }

@@ -5,15 +5,7 @@ use reqwest::Response;
 use tokio::{fs::File, io::AsyncWriteExt};
 
 use crate::{
-    DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, DownloadResult, Error, IntoUrl, Progress, ProgressHandle,
-    RetryHandle, RetryHandler,
-    destination::Destination,
-    file_info::FileInfo,
-    shared::DownloadConfig,
-    head::Head,
-    headers::{self, add_resume_download_headers},
-    nonblocking::{reqwest_utils, tokio_tokenbucket::TokioTokenBucket},
-    utils,
+    destination::Destination, file_info::FileInfo, head::Head, headers::{self, add_resume_download_headers}, nonblocking::{reqwest_utils, tokio_tokenbucket::TokioTokenBucket}, shared::DownloadConfig, utils, DownloadResult, Error, IntoUri, Progress, ProgressHandle, RetryHandle, RetryHandler, DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY
 };
 
 /// Represents a file about to be downloaded.
@@ -52,9 +44,9 @@ impl Download {
         client: reqwest::Client,
         max_retries: Option<u64>,
         limiter: Arc<TokioTokenBucket>,
-        url: impl IntoUrl,
+        uri: impl IntoUri,
     ) -> Self {
-        let mut config = DownloadConfig::new(url);
+        let mut config = DownloadConfig::new(uri);
         config.max_retries(max_retries);
 
         Download {
@@ -288,7 +280,7 @@ impl DownloadInner {
         // and pass to the progress handler throughout the download.
         let progress = ProgressHandle::new(
             dl.config.url,
-            dl.head.and_then(|h| h.updated_url),
+            dl.head.and_then(|h| h.updated_uri),
             destination,
             local_file_info,
             file_length,
@@ -451,11 +443,11 @@ impl DownloadInner {
     async fn get_file(&mut self) -> Result<Response, Error> {
         let mut headers = self.headers.clone();
         add_resume_download_headers(&mut headers, &self.progress);
-        let url = self.progress.url();
+        let uri = self.progress.uri();
         let (u, response) =
-            reqwest_utils::request(&self.client, reqwest::Method::GET, url.clone(), headers).await;
+            reqwest_utils::request(&self.client, reqwest::Method::GET, uri, headers).await;
         if u.is_some() {
-            self.progress.updated_url = u
+            self.progress.updated_uri = u
         }
 
         if let Ok(response) = response.as_ref()
@@ -494,7 +486,7 @@ impl DownloadInner {
 
         while let Some(chunk) = response.chunk().await.map_err(|cause| Error::Network {
             during: "read",
-            url: self.progress.url().to_string(),
+            uri: self.progress.uri().to_string(),
             cause: cause.without_url().to_string(),
         })? {
             self.part_file

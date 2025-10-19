@@ -1,10 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
-use url::Url;
+use http::{HeaderMap, HeaderValue, Uri, header::IntoHeaderName};
 
 use crate::{
-    Error, IntoUrl, Progress, ProgressHandle, RetryHandle, RetryHandler,
+    Error, IntoUri, Progress, ProgressHandle, RetryHandle, RetryHandler,
     file_info::FileInfo,
     handles::default_retry_callback,
     utils::{self, http::append_header},
@@ -13,7 +12,7 @@ use crate::{
 /// Represents configuraton used to download a file.
 pub struct DownloadConfig {
     /// The URL we want to download from.
-    pub url: Url,
+    pub url: Uri,
     /// Headers to include in the request.
     pub headers: HeaderMap,
     /// The configured destination for the file, if any.  This could be a directory
@@ -34,10 +33,10 @@ pub struct DownloadConfig {
 
 impl DownloadConfig {
     /// Create a new download for the given URL.
-    pub(crate) fn new(url: impl IntoUrl) -> Self {
-        let (url, err) = match url.into_url() {
+    pub(crate) fn new(url: impl IntoUri) -> Self {
+        let (url, err) = match url.into_uri() {
             Ok(u) => (u, None),
-            Err(e) => (Url::parse("http://invalid/").unwrap(), Some(e)),
+            Err(e) => (Uri::from_static("http://invalid/"), Some(e)),
         };
 
         DownloadConfig {

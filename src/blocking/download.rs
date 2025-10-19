@@ -11,7 +11,7 @@ use http::{HeaderMap, HeaderValue, Response, StatusCode, header::IntoHeaderName}
 use ureq::Body;
 
 use crate::{
-    DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, DownloadResult, Error, IntoUrl, Progress, ProgressHandle,
+    DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, DownloadResult, Error, IntoUri, Progress, ProgressHandle,
     RetryHandle, RetryHandler,
     blocking::{tokenbucket::BlockingTokenBucket, ureq_utils},
     destination::Destination,
@@ -60,7 +60,7 @@ impl Download {
         agent: ureq::Agent,
         max_retries: Option<u64>,
         limiter: Arc<BlockingTokenBucket>,
-        url: impl IntoUrl,
+        url: impl IntoUri,
     ) -> Self {
         let mut config = DownloadConfig::new(url);
         config.max_retries(max_retries);
@@ -298,7 +298,7 @@ impl DownloadInner {
         // and pass to the progress handler throughout the download.
         let progress = ProgressHandle::new(
             dl.config.url,
-            dl.head.and_then(|h| h.updated_url),
+            dl.head.and_then(|h| h.updated_uri),
             destination,
             local_file_info,
             file_length,
@@ -458,10 +458,10 @@ impl DownloadInner {
     fn get_file(&mut self) -> Result<Response<Body>, Error> {
         let mut headers = self.headers.clone();
         add_resume_download_headers(&mut headers, &self.progress);
-        let url = self.progress.url();
-        let (u, response) = ureq_utils::ureq_request(&self.agent, http::Method::GET, url, &headers);
+        let uri = self.progress.uri();
+        let (u, response) = ureq_utils::ureq_request(&self.agent, http::Method::GET, uri, &headers);
         if u.is_some() {
-            self.progress.updated_url = u
+            self.progress.updated_uri = u
         }
 
         if let Ok(response) = response.as_ref()
@@ -500,7 +500,7 @@ impl DownloadInner {
         loop {
             let n = reader.read(&mut buf).map_err(|cause| Error::Network {
                 during: "read",
-                url: self.progress.url().to_string(),
+                uri: self.progress.uri().to_string(),
                 cause: cause.to_string(),
             })?;
             if n == 0 {

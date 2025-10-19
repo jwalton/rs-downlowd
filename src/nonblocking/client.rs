@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    nonblocking::{download::Download, tokio_tokenbucket::TokioTokenBucket}, ClientBuilder, Error, IntoUrl
+    nonblocking::{download::Download, tokio_tokenbucket::TokioTokenBucket}, ClientBuilder, Error, IntoUri
 };
 
 /// A client for downloading files over HTTP.  A `Client` uses an internal
@@ -79,7 +79,7 @@ impl Client {
     /// # }
     /// ```
     ///
-    pub fn download(&self, url: impl IntoUrl) -> Download {
+    pub fn download(&self, url: impl IntoUri) -> Download {
         Download::new(
             self.client.clone(),
             self.default_max_retries,

@@ -25,11 +25,11 @@ pub enum Error {
 
     /// There was a network error when downloading the file (e.g. the host is unreachable, the connection was reset, etc).
     /// Network errors are retryable.
-    #[error("Network error during {during} for {url}: {cause}")]
+    #[error("Network error during {during} for {uri}: {cause}")]
     #[non_exhaustive]
     Network {
         during: &'static str,
-        url: String,
+        uri: String,
         cause: String,
     },
 
