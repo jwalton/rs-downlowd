@@ -24,7 +24,7 @@ fn main() {
             let destination = Path::new(&args[2]);
             let client = downlowd::Client::new();
             match client
-                .download(url)
+                .get(url)
                 .destination(destination)
                 .on_progress(move |p| {
                     if let Some(total) = p.total_bytes() {

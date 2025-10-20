@@ -15,7 +15,7 @@ const MESSAGE: &str = "hello world";
 fn should_get_the_name_of_the_file() -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("{SERVER_URL}/hello.txt");
 
-    let mut download = Client::new().download(&url);
+    let mut download = Client::new().get(&url);
     assert_eq!(download.get_remote_file_name(), "hello.txt");
     Ok(())
 }
@@ -34,7 +34,7 @@ fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let result = {
         let recorder = recorder.clone();
         client
-            .download(&url)
+            .get(&url)
             .destination(destination)
             .on_progress(move |p| {
                 assert_eq!(p.etag().unwrap(), head.etag);
@@ -78,7 +78,7 @@ fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::error::Er
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         .on_progress(|progress| {
             println!(
@@ -106,7 +106,7 @@ fn should_not_skip_a_file_if_the_size_is_wrong() -> Result<(), Box<dyn std::erro
     fs::write(&destination, "a")?;
 
     let client = Client::new();
-    let result = client.download(&url).destination(&destination).send()?;
+    let result = client.get(&url).destination(&destination).send()?;
 
     let file_contents = fs::read_to_string(&result.path)?;
     assert_eq!(file_contents, MESSAGE);
@@ -122,7 +122,7 @@ fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         .on_retry(move |_| {
             panic!("Should not retry on 404");
@@ -147,7 +147,7 @@ fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         .on_progress(|progress| {
             if progress.bytes() > 1_000_000 {
@@ -166,7 +166,7 @@ fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>
     assert!(file_size < 10 * 1024 * 1024);
 
     // Continue the download.
-    let result = client.download(&url).destination(&destination).send()?;
+    let result = client.get(&url).destination(&destination).send()?;
 
     assert_eq!(&result.path, &destination);
     let file_size = fs::metadata(&destination)?.len();
@@ -191,7 +191,7 @@ fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::error::Err
     client.max_bytes_per_second(Some(1024 * 1024));
 
     let _download = client
-        .download(url)
+        .get(url)
         .user_agent("my-user-agent-2/1.0")
         .header("key", "new-value")
         .headers(HeaderMap::new())

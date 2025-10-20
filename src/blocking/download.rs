@@ -120,7 +120,7 @@ impl Download {
     /// # use std::time::Duration;
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let client = downlowd::blocking::Client::new();
-    ///     let result = client.download("https://example.com/file.txt")
+    ///     let result = client.get("https://example.com/file.txt")
     ///        .destination("file.txt")
     ///        .on_retry(|r| {
     ///           if matches!(r.error(), downlowd::Error::FileChanged { .. }) {
@@ -145,7 +145,7 @@ impl Download {
     /// # use std::time::Duration;
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let client = downlowd::blocking::Client::new();
-    ///     let result = client.download("http://localhost:8089/i_do_not_exist.txt")
+    ///     let result = client.get("http://localhost:8089/i_do_not_exist.txt")
     ///        .destination("file.txt")
     ///        .on_retry(|r| r.cancel())
     ///        .send();

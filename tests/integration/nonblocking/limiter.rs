@@ -22,7 +22,7 @@ async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>>
         .max_bytes_per_second(Some(limit))
         .build()
         .unwrap();
-    let fut = client.download(&url).destination(&destination).send();
+    let fut = client.get(&url).destination(&destination).send();
     let result = tokio::time::timeout(timeout, fut).await??;
     let elapsed = start.elapsed().unwrap().as_millis();
 
@@ -57,7 +57,7 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
     let start = SystemTime::now();
     let join_handle = {
         let client = client.clone();
-        tokio::spawn(async move { client.download(&url).destination(&destination).send().await })
+        tokio::spawn(async move { client.get(&url).destination(&destination).send().await })
     };
 
     // Wait a bit, then increase the limit.
@@ -97,7 +97,7 @@ async fn should_allow_removing_download_speed_partway_through()
     let start = SystemTime::now();
     let fut = {
         let client = client.clone();
-        tokio::spawn(async move { client.download(&url).destination(&destination).send().await })
+        tokio::spawn(async move { client.get(&url).destination(&destination).send().await })
     };
 
     // Wait a bit, then increase the limit.

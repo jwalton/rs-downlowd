@@ -32,7 +32,7 @@ async fn should_work_when_cancelled() -> Result<(), Box<dyn std::error::Error>> 
         attempts += 1;
         let bytes_downloaded = bytes_downloaded.clone();
         let fut = client
-            .download(&url)
+            .get(&url)
             .destination(&destination)
             .on_progress(move |p| {
                 bytes_downloaded.fetch_add(p.delta(), Ordering::SeqCst);
@@ -54,8 +54,8 @@ async fn should_work_when_cancelled() -> Result<(), Box<dyn std::error::Error>> 
     let big_file = utils::big_file_path(file_size);
     let expected_contents = tokio::fs::read(&big_file).await?;
     let actual_contents = tokio::fs::read(&destination).await?;
-    assert_eq!(expected_contents, actual_contents);
     assert_eq!(actual_contents.len(), file_size);
+    assert!(expected_contents == actual_contents);
     assert_eq!(
         actual_contents.len() as u64,
         bytes_downloaded.load(Ordering::SeqCst)

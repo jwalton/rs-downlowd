@@ -38,7 +38,7 @@ fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>> {
             .max_bytes_per_second(Some(limit))
             .build()
             .unwrap();
-        client.download(&url).destination(&destination).send()
+        client.get(&url).destination(&destination).send()
     })?;
 
     let elapsed = start.elapsed().unwrap().as_millis();
@@ -74,7 +74,7 @@ fn should_change_download_speed_partway_through() -> Result<(), Box<dyn std::err
     let start = SystemTime::now();
     let join_handle = {
         let client = client.clone();
-        thread::spawn(move || client.download(&url).destination(&destination).send())
+        thread::spawn(move || client.get(&url).destination(&destination).send())
     };
 
     // Wait a bit, then increase the limit.
@@ -113,7 +113,7 @@ fn should_allow_removing_download_speed_partway_through() -> Result<(), Box<dyn 
     let start = SystemTime::now();
     let join_handle = {
         let client = client.clone();
-        thread::spawn(move || client.download(&url).destination(&destination).send())
+        thread::spawn(move || client.get(&url).destination(&destination).send())
     };
 
     // Wait a bit, then increase the limit.

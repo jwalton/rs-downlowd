@@ -29,7 +29,7 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let url = server.url("/file.txt");
     let destination = dir.path().join("my-file.txt");
     let result = client
-        .download(url)
+        .get(url)
         .destination(destination)
         .send()
         .await?;
@@ -58,7 +58,7 @@ async fn should_set_the_user_agent_in_client() -> Result<(), Box<dyn std::error:
 
     let client = Client::builder().user_agent("test1").build()?;
     let result = client
-        .download(server.url("/file.txt"))
+        .get(server.url("/file.txt"))
         .destination(dir.path().join("my-file.txt"))
         .send()
         .await?;
@@ -83,7 +83,7 @@ async fn should_set_the_user_agent_for_a_single_download() -> Result<(), Box<dyn
 
     let client = Client::builder().user_agent("test1").build()?;
     let result = client
-        .download(server.url("/file.txt"))
+        .get(server.url("/file.txt"))
         .user_agent("test2")
         .destination(dir.path().join("my-file.txt"))
         .send()
@@ -116,7 +116,7 @@ async fn should_follow_redirects() -> Result<(), Box<dyn std::error::Error>> {
     let redirect_url = server.url("/file2.txt");
     let destination = dir.path().join("my-file.txt");
     let result = client
-        .download(url.clone())
+        .get(url.clone())
         .destination(destination)
         .on_progress(move |progress| {
             // Verify the progress handler calims to have followed the redirect.
@@ -151,7 +151,7 @@ async fn should_not_follow_redirect_loop() -> Result<(), Box<dyn std::error::Err
     let url = server.url("/file.txt");
     let destination = dir.path().join("my-file.txt");
     let result = client
-        .download(url)
+        .get(url)
         .max_retries(Some(100))
         .destination(destination)
         .send()
@@ -193,7 +193,7 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
     tokio::fs::write(&part_file, &message[..5]).await?;
 
     let result = client
-        .download(url)
+        .get(url)
         .destination(destination)
         .etag("test-etag")
         .send()
@@ -231,7 +231,7 @@ async fn should_add_custom_headers() -> Result<(), Box<dyn std::error::Error>> {
     let url = server.url("/file.txt");
     let destination = dir.path().join("my-file.txt");
     let result = client
-        .download(url)
+        .get(url)
         .header("x-my-other", "canon")
         .destination(destination)
         .send()
@@ -271,7 +271,7 @@ async fn should_retry_a_download() -> Result<(), Box<dyn std::error::Error>> {
     let result = {
         let retry_count = retry_count.clone();
         client
-            .download(url)
+            .get(url)
             .destination(destination)
             .on_retry(move |r| {
                 let mut count = retry_count.lock().unwrap();
@@ -310,7 +310,7 @@ async fn should_abort_on_retry() -> Result<(), Box<dyn std::error::Error>> {
     let destination = dir.path().join("my-file.txt");
 
     let result = client
-        .download(url)
+        .get(url)
         .destination(destination)
         .on_retry(move |r| {
             r.cancel();

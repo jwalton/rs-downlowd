@@ -45,7 +45,7 @@ fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .last_modified(head.last_modified)
         .destination(&destination)
         .on_progress(recorder.on_progress())
@@ -97,7 +97,7 @@ fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error::Error
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         .on_progress(|progress| {
             println!(
@@ -143,7 +143,7 @@ fn should_not_continue_a_file_from_sidecar_if_length_etag_changed()
     )?;
 
     let client = Client::new();
-    let result = client.download(&url).destination(&destination).send()?;
+    let result = client.get(&url).destination(&destination).send()?;
 
     assert_eq!(&result.path, &destination);
 
@@ -180,7 +180,7 @@ fn should_not_continue_a_file_from_sidecar_if_length_has_changed()
     )?;
 
     let client = Client::new();
-    let result = client.download(&url).destination(&destination).send()?;
+    let result = client.get(&url).destination(&destination).send()?;
 
     assert_eq!(&result.path, &destination);
 
@@ -204,7 +204,7 @@ fn should_not_continue_a_file_with_wrong_last_modified() -> Result<(), Box<dyn s
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         .last_modified("wrong")
         .send()?;
@@ -231,7 +231,7 @@ fn should_redownload_if_etag_is_same_but_last_modified_has_changed()
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         .etag(head.etag)
         .last_modified("wrong")
@@ -266,7 +266,7 @@ fn should_prefer_user_etag_over_sidecar_file() -> Result<(), Box<dyn std::error:
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         // We're providing the correct etag, maybe from a database.  This should
         // override whatever the sidecar file says.

@@ -33,7 +33,7 @@ use downlowd::Client;
 
 let client = Client::new();
 let result = client
-    .download("http://localhost:8089/hello.txt")
+    .get("http://localhost:8089/hello.txt")
     .destination(dirname)
     .send()
     .await?;
@@ -64,7 +64,7 @@ There are a couple of ways you can hook into downlowd to report on progress. The
 
 let client = Client::new();
 let result = client
-    .download("http://localhost:8089/hello.txt")
+    .get("http://localhost:8089/hello.txt")
     .destination(dirname.join("file.txt"))
     .on_progress(|progress| {
         println!(
@@ -101,7 +101,7 @@ use downlowd::{Client, Error};
 
 let client = Client::new();
 let result = client
-    .download("http://localhost:8089/hello.txt")
+    .get("http://localhost:8089/hello.txt")
     .destination(dirname)
     .on_retry(|r| {
         if matches!(r.error(), Error::FileChanged { .. }) {
@@ -141,7 +141,7 @@ let client = ClientBuilder::new()
     .build()?;
 
 let result = client
-    .download("http://localhost:8089/hello.txt")
+    .get("http://localhost:8089/hello.txt")
     // Can set headers at the request level, too.
     .header("x-my-custom-header", "canon")
     .destination(dirname.join("file.txt"))

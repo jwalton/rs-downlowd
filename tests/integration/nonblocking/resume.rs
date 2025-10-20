@@ -46,7 +46,7 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .last_modified(head.last_modified)
         .destination(&destination)
         .on_progress(recorder.on_progress())
@@ -100,7 +100,7 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         .on_progress(|progress| {
             println!(
@@ -149,7 +149,7 @@ async fn should_not_continue_a_file_from_sidecar_if_length_etag_changed()
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         .send()
         .await?;
@@ -191,7 +191,7 @@ async fn should_not_continue_a_file_from_sidecar_if_length_has_changed()
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         .send()
         .await?;
@@ -219,7 +219,7 @@ async fn should_not_continue_a_file_with_wrong_last_modified()
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         .last_modified("wrong")
         .send()
@@ -247,7 +247,7 @@ async fn should_redownload_if_etag_is_same_but_last_modified_has_changed()
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         .etag(head.etag)
         .last_modified("wrong")
@@ -284,7 +284,7 @@ async fn should_prefer_user_etag_over_sidecar_file() -> Result<(), Box<dyn std::
 
     let client = Client::new();
     let result = client
-        .download(&url)
+        .get(&url)
         .destination(&destination)
         // We're providing the correct etag, maybe from a database.  This should
         // override whatever the sidecar file says.

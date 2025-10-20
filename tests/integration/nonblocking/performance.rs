@@ -33,7 +33,7 @@ async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..ITERATIONS {
         let _ = fs::remove_file(&destination).await;
         client
-            .download(&url)
+            .get(&url)
             .destination(&destination)
             .send()
             .await?;

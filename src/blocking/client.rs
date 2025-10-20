@@ -49,14 +49,14 @@ impl Client {
     /// ```no_run
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     ///     let client = downlowd::blocking::Client::new();
-    ///     let result = client.download("https://example.com/file.txt")
+    ///     let result = client.get("https://example.com/file.txt")
     ///        .destination("file.txt")
     ///        .send()?;
     /// #   Ok(())
     /// # }
     /// ```
     ///
-    pub fn download(&self, uri: impl IntoUri) -> Download {
+    pub fn get(&self, uri: impl IntoUri) -> Download {
         let mut config = DownloadConfig::new(uri);
         config.max_retries(self.default_max_retries);
 
