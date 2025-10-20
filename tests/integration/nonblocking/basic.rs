@@ -39,7 +39,7 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
             .on_progress(move |p| {
                 assert_eq!(p.etag().unwrap(), head.etag);
                 assert_eq!(p.last_modified().unwrap(), head.last_modified);
-                assert_eq!(p.total_bytes().unwrap(), head.content_length);
+                assert_eq!(p.remote_length().unwrap(), head.content_length);
 
                 recorder.record_progress(p);
             })
@@ -85,7 +85,7 @@ async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::err
             println!(
                 "Downloaded {} of {} bytes",
                 progress.bytes(),
-                progress.total_bytes().unwrap()
+                progress.remote_length().unwrap()
             );
         })
         .send()
@@ -211,7 +211,7 @@ async fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::erro
             println!(
                 "Downloaded {} of {} bytes",
                 progress.bytes(),
-                progress.total_bytes().unwrap()
+                progress.remote_length().unwrap()
             );
         })
         .on_retry(|r| r.set_delay(Duration::from_secs(1)))

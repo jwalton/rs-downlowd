@@ -27,7 +27,7 @@ fn main() {
                 .get(url)
                 .destination(destination)
                 .on_progress(move |p| {
-                    if let Some(total) = p.total_bytes() {
+                    if let Some(total) = p.remote_length() {
                         progress.set_length(total);
                         progress.set_style(
                             indicatif::ProgressStyle::with_template(

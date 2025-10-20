@@ -106,7 +106,7 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
             println!(
                 "Downloaded {} of {} bytes",
                 progress.bytes(),
-                progress.total_bytes().unwrap()
+                progress.remote_length().unwrap()
             );
         })
         .send()
@@ -234,7 +234,7 @@ async fn should_continue_a_file_from_sidecar_that_is_already_complete_and_rename
             println!(
                 "Downloaded {} of {} bytes",
                 progress.bytes(),
-                progress.total_bytes().unwrap()
+                progress.remote_length().unwrap()
             );
         })
         .send()

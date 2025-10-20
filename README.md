@@ -70,7 +70,7 @@ let result = client
         println!(
             "Downloaded {} of {} bytes",
             progress.bytes(),
-            progress.total_bytes().unwrap()
+            progress.remote_length().unwrap()
         );
     })
     .send()

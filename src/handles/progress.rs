@@ -178,7 +178,7 @@ impl ProgressHandle {
 
     /// Returns the size of the file on the server, if known.
     #[must_use]
-    pub fn total_bytes(&self) -> Option<u64> {
+    pub fn remote_length(&self) -> Option<u64> {
         self.local_file_info.file_length
     }
 

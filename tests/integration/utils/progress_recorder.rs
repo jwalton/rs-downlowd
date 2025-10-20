@@ -39,6 +39,6 @@ fn record_progress(records: Arc<Mutex<Vec<ProgressRecord>>>, progress: &mut Prog
     let mut records = records.lock().unwrap();
     records.push(ProgressRecord {
         bytes: progress.bytes(),
-        total_bytes: progress.total_bytes(),
+        total_bytes: progress.remote_length(),
     });
 }
