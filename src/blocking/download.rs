@@ -11,7 +11,7 @@ use http::{HeaderMap, HeaderValue, Response, StatusCode, header::IntoHeaderName}
 use ureq::Body;
 
 use crate::{
-    DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, DownloadResult, Error, IntoUri, Progress, ProgressHandle,
+    DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, DownloadResult, Error, Progress, ProgressHandle,
     RetryHandle, RetryHandler,
     blocking::{tokenbucket::BlockingTokenBucket, ureq_utils},
     destination::Destination,
@@ -58,13 +58,9 @@ impl Download {
     /// Create a new download for the given URL.
     pub(crate) fn new(
         agent: ureq::Agent,
-        max_retries: Option<u64>,
         limiter: Arc<BlockingTokenBucket>,
-        url: impl IntoUri,
+        config: DownloadConfig,
     ) -> Self {
-        let mut config = DownloadConfig::new(url);
-        config.max_retries(max_retries);
-
         Download {
             agent,
             limiter,
@@ -518,10 +514,7 @@ impl DownloadInner {
 
             let chunk_size = chunk.len() as u64;
             bytes_downloaded += chunk_size;
-            self.progress.delta = chunk_size;
-            self.progress.bytes += chunk_size;
-            self.progress.bytes_transferred += chunk_size;
-            self.progress.notify(&mut self.progress_handler)?;
+            self.progress.notify_bytes_written(&mut self.progress_handler, chunk_size)?;
 
             // Let the rate limiter know we downloaded some bytes.
             self.limiter.bytes_consumed(chunk.len() as u64);

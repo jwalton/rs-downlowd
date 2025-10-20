@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     IntoUri,
     blocking::{BlockingClientBuilder, download::Download, tokenbucket::BlockingTokenBucket},
-    client_builder::ClientBuilder,
+    shared::DownloadConfig,
 };
 
 /// A client for downloading files over HTTP.  A `Client` uses an internal
@@ -20,7 +20,7 @@ pub struct Client {
 impl Client {
     /// Create a new client.
     pub fn new() -> Self {
-        ClientBuilder::default().blocking().unwrap()
+        BlockingClientBuilder::default().build().unwrap()
     }
 
     pub(crate) fn new_inner(
@@ -56,13 +56,11 @@ impl Client {
     /// # }
     /// ```
     ///
-    pub fn download(&self, url: impl IntoUri) -> Download {
-        Download::new(
-            self.agent.clone(),
-            self.default_max_retries,
-            self.limiter.clone(),
-            url,
-        )
+    pub fn download(&self, uri: impl IntoUri) -> Download {
+        let mut config = DownloadConfig::new(uri);
+        config.max_retries(self.default_max_retries);
+
+        Download::new(self.agent.clone(), self.limiter.clone(), config)
     }
 
     /// Update the maximum bytes per second that can be downloaded. This limit

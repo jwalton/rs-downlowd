@@ -97,6 +97,27 @@ impl ProgressHandle {
             .map(|len| self.bytes == len)
     }
 
+    /// Notify that we've written some bytes.
+    pub(crate) fn notify_bytes_written(
+        &mut self,
+        progress_handler: &mut Option<Box<dyn Progress + Send>>,
+        bytes: u64,
+    ) -> Result<(), Error> {
+        self.delta = bytes;
+        self.bytes += bytes;
+        self.bytes_transferred += bytes;
+
+        if let Some(handler) = progress_handler.as_mut() {
+            handler.progress(self);
+        }
+
+        if self.cancelled {
+            return Err(Error::Cancelled);
+        }
+
+        Ok(())
+    }
+
     /// Notify the given progress handler with this progress object.
     pub(crate) fn notify(
         &mut self,

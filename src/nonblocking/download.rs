@@ -5,7 +5,15 @@ use reqwest::Response;
 use tokio::{fs::File, io::AsyncWriteExt};
 
 use crate::{
-    destination::Destination, file_info::FileInfo, head::Head, headers::{self, add_resume_download_headers}, nonblocking::{reqwest_utils, tokio_tokenbucket::TokioTokenBucket}, shared::DownloadConfig, utils, DownloadResult, Error, IntoUri, Progress, ProgressHandle, RetryHandle, RetryHandler, DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY
+    DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, DownloadResult, Error, Progress, ProgressHandle,
+    RetryHandle, RetryHandler,
+    destination::Destination,
+    file_info::FileInfo,
+    head::Head,
+    headers::{self, add_resume_download_headers},
+    nonblocking::{reqwest_utils, tokio_tokenbucket::TokioTokenBucket},
+    shared::DownloadConfig,
+    utils,
 };
 
 /// Represents a file about to be downloaded.
@@ -42,13 +50,9 @@ impl Download {
     /// Create a new download for the given URL.
     pub(crate) fn new(
         client: reqwest::Client,
-        max_retries: Option<u64>,
         limiter: Arc<TokioTokenBucket>,
-        uri: impl IntoUri,
+        config: DownloadConfig,
     ) -> Self {
-        let mut config = DownloadConfig::new(uri);
-        config.max_retries(max_retries);
-
         Download {
             client,
             limiter,
@@ -500,10 +504,7 @@ impl DownloadInner {
 
             let chunk_size = chunk.len() as u64;
             bytes_downloaded += chunk_size;
-            self.progress.delta = chunk_size;
-            self.progress.bytes += chunk_size;
-            self.progress.bytes_transferred += chunk_size;
-            self.progress.notify(&mut self.progress_handler)?;
+            self.progress.notify_bytes_written(&mut self.progress_handler, chunk_size)?;
 
             // Let the rate limiter know we downloaded some bytes.
             self.limiter.bytes_consumed(chunk.len() as u64).await;

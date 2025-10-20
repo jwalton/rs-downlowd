@@ -10,7 +10,7 @@ pub struct BlockingClientBuilder {
 
 impl ClientBuilder {
     /// Build a blocking client.
-    pub fn blocking(self) -> Result<Client, Error> {
+    pub(crate) fn blocking(self) -> Result<Client, Error> {
         if let Some(e) = self.err {
             return Err(e);
         }

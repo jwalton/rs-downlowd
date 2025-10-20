@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use crate::{
-    nonblocking::{download::Download, tokio_tokenbucket::TokioTokenBucket}, ClientBuilder, Error, IntoUri
+    ClientBuilder, Error, IntoUri,
+    nonblocking::{download::Download, tokio_tokenbucket::TokioTokenBucket},
+    shared::DownloadConfig,
 };
 
 /// A client for downloading files over HTTP.  A `Client` uses an internal
@@ -80,12 +82,10 @@ impl Client {
     /// ```
     ///
     pub fn download(&self, url: impl IntoUri) -> Download {
-        Download::new(
-            self.client.clone(),
-            self.default_max_retries,
-            self.limiter.clone(),
-            url,
-        )
+        let mut config = DownloadConfig::new(url);
+        config.max_retries(self.default_max_retries);
+
+        Download::new(self.client.clone(), self.limiter.clone(), config)
     }
 
     /// Update the maximum bytes per second that can be downloaded. This limit
