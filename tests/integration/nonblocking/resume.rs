@@ -206,6 +206,49 @@ async fn should_not_continue_a_file_from_sidecar_if_length_has_changed()
     Ok(())
 }
 
+/// We can get into a situation where we rename a file, and then before we delete
+/// the sidecar file, the program crashes or our future is cancelled.
+#[tokio::test]
+async fn should_continue_a_file_from_sidecar_that_is_already_complete_and_renamed()
+-> Result<(), Box<dyn std::error::Error>> {
+    let url = format!("{SERVER_URL}/hello.txt");
+    let dir = TempDir::new()?;
+    let destination = dir.path().join("my-file.txt");
+
+    // Create a partial file to simulate a previous download.
+    tokio::fs::write(dir.path().join("my-file.txt"), &MESSAGE).await?;
+    let head = utils::head_url(&url);
+    let sidecar_file = dir.path().join("my-file.txt.downloadinfo");
+    write_sidecar_file(
+        &sidecar_file,
+        Some(&head.last_modified),
+        Some(&head.etag),
+        Some(head.content_length),
+    )
+    .await?;
+
+    let result = Client::new()
+        .get(&url)
+        .destination(&destination)
+        .on_progress(|progress| {
+            println!(
+                "Downloaded {} of {} bytes",
+                progress.bytes(),
+                progress.total_bytes().unwrap()
+            );
+        })
+        .send()
+        .await?;
+
+    assert_eq!(&result.path, &destination);
+    let file_contents = tokio::fs::read_to_string(&result.path).await?;
+    assert_eq!(file_contents, MESSAGE);
+    assert_eq!(result.bytes_downloaded, 0);
+    assert!(!sidecar_file.exists());
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn should_not_continue_a_file_with_wrong_last_modified()
 -> Result<(), Box<dyn std::error::Error>> {

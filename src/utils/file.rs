@@ -118,3 +118,31 @@ pub fn truncate_file(filename: &Path, file: &mut std::fs::File) -> Result<(), Er
         })?;
     Ok(())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use temp_dir::TempDir;
+
+    #[tokio::test]
+    #[cfg(feature = "async")]
+    async fn should_truncate_a_file() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = TempDir::new()?;
+        let path = dir.path().join("my-file.txt");
+
+        let mut file = open_file_for_writing_async(&path).await?;
+        tokio::io::AsyncWriteExt::write_all(&mut file, b"Hello, world!").await?;
+        file.sync_all().await?;
+
+        let metadata = file.metadata().await?;
+        assert_eq!(metadata.len(), 13);
+
+        truncate_file_async(&path, &mut file).await?;
+
+        let metadata = file.metadata().await?;
+        assert_eq!(metadata.len(), 0);
+
+        Ok(())
+    }
+}

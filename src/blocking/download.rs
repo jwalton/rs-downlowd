@@ -227,11 +227,12 @@ impl Download {
         let destination = self.resolve_destination()?;
 
         // TODO: Allow forcing the download if the file already exists.
-        if self.should_skip(&destination.path) {
+        if let Some(len) = self.recover(&destination) {
             // File already exists and is the correct length - nothing to do.
             return Ok(DownloadResult {
                 tries: 0,
                 path: destination.path,
+                file_size: len,
                 bytes_downloaded: 0,
             });
         }
@@ -240,17 +241,45 @@ impl Download {
         inner.download()
     }
 
-    /// Returns true if the local file exists and is the same length as the remote file.
-    fn should_skip(&mut self, destination: &Path) -> bool {
-        let local_length = std::fs::metadata(destination).ok().map(|m| m.len());
+    /// Recover from an existing file, if possible.  This handles the corner cases
+    /// where we were close to being complete, but crashed or were cancelled
+    /// right at the end.  If ths local file is the correct length and is complete,
+    /// this returns the length of the file (indicating that the caller can skip
+    /// downloading the file).
+    fn recover(&mut self, destination: &Destination) -> Option<u64> {
+        let local_part_length = fs::metadata(&destination.part_file)
+            .ok()
+            .map(|m| m.len());
 
-        if let Some(local_length) = local_length
-            && let Some(remote_length) = self.get_remote_file_length()
-        {
-            return local_length == remote_length;
+        if local_part_length.is_some() {
+            // We're partway through downloading the file.  Let the download continue.
+            // If the part file is at 100% done, this will get handled below.
+            return None;
         }
 
-        false
+        let local_length = fs::metadata(&destination.path).ok().map(|m| m.len());
+
+        if let Some(local_length) = local_length {
+            let file_info = FileInfo::load_from_disk_blocking(&destination.sidecar_file).ok();
+            let remote_length =
+                if let Some(remote_length) = file_info.as_ref().and_then(|f| f.file_length) {
+                    Some(remote_length)
+                } else {
+                    self.get_remote_file_length()
+                };
+
+            if let Some(remote_length) = remote_length
+                && local_length == remote_length
+            {
+                // We have a copy of the file locally, which appears to be the correct length.
+                if file_info.is_some() {
+                    let _ = fs::remove_file(&destination.sidecar_file);
+                }
+                return Some(local_length);
+            }
+        }
+
+        None
     }
 
     /// Returns the final destination path for the download.
@@ -382,18 +411,14 @@ impl DownloadInner {
         )
         .map_err(|e| Error::Write {
             action: "renaming part file",
-            path: self.progress.destination.part_file,
+            path: self.progress.destination.part_file.clone(),
             cause: e,
         })?;
 
         // Delete the sidecar file.
         let _ = fs::remove_file(&self.progress.destination.sidecar_file);
 
-        Ok(DownloadResult {
-            tries: self.progress.tries,
-            path: self.progress.destination.path,
-            bytes_downloaded: self.progress.bytes_transferred,
-        })
+        Ok(DownloadResult::new(self.progress))
     }
 
     /// This is the "inner loop" of the download. Try to download the file, and return
@@ -514,7 +539,8 @@ impl DownloadInner {
 
             let chunk_size = chunk.len() as u64;
             bytes_downloaded += chunk_size;
-            self.progress.notify_bytes_written(&mut self.progress_handler, chunk_size)?;
+            self.progress
+                .notify_bytes_written(&mut self.progress_handler, chunk_size)?;
 
             // Let the rate limiter know we downloaded some bytes.
             self.limiter.bytes_consumed(chunk.len() as u64);

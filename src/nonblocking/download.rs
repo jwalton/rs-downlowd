@@ -2,7 +2,7 @@ use std::{path::Path, sync::Arc, time::Duration};
 
 use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
 use reqwest::Response;
-use tokio::{fs::File, io::AsyncWriteExt};
+use tokio::{fs::{self, File}, io::AsyncWriteExt};
 
 use crate::{
     DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, DownloadResult, Error, Progress, ProgressHandle,
@@ -223,11 +223,12 @@ impl Download {
         let destination = self.resolve_destination().await?;
 
         // TODO: Allow forcing the download if the file already exists.
-        if self.should_skip(&destination.path).await {
+        if let Some(len) = self.recover(&destination).await {
             // File already exists and is the correct length - nothing to do.
             return Ok(DownloadResult {
                 tries: 0,
                 path: destination.path,
+                file_size: len,
                 bytes_downloaded: 0,
             });
         }
@@ -236,20 +237,51 @@ impl Download {
         inner.download().await
     }
 
-    /// Returns true if the local file exists and is the same length as the remote file.
-    async fn should_skip(&mut self, destination: &Path) -> bool {
-        let local_length = tokio::fs::metadata(&destination)
+    /// Recover from an existing file, if possible.  This handles the corner cases
+    /// where we were close to being complete, but crashed or were cancelled
+    /// right at the end.  If ths local file is the correct length and is complete,
+    /// this returns the length of the file (indicating that the caller can skip
+    /// downloading the file).
+    async fn recover(&mut self, destination: &Destination) -> Option<u64> {
+        let local_part_length = fs::metadata(&destination.part_file)
             .await
             .ok()
             .map(|m| m.len());
 
-        if let Some(local_length) = local_length
-            && let Some(remote_length) = self.get_remote_file_length().await
-        {
-            return local_length == remote_length;
+        if local_part_length.is_some() {
+            // We're partway through downloading the file.  Let the download continue.
+            // If the part file is at 100% done, this will get handled below.
+            return None;
         }
 
-        false
+        let local_length = fs::metadata(&destination.path)
+            .await
+            .ok()
+            .map(|m| m.len());
+
+        if let Some(local_length) = local_length {
+            let file_info = FileInfo::load_from_disk(&destination.sidecar_file)
+                .await
+                .ok();
+            let remote_length =
+                if let Some(remote_length) = file_info.as_ref().and_then(|f| f.file_length) {
+                    Some(remote_length)
+                } else {
+                    self.get_remote_file_length().await
+                };
+
+            if let Some(remote_length) = remote_length
+                && local_length == remote_length
+            {
+                // We have a copy of the file locally, which appears to be the correct length.
+                if file_info.is_some() {
+                    let _ = fs::remove_file(&destination.sidecar_file).await;
+                }
+                return Some(local_length)
+            }
+        }
+
+        None
     }
 
     /// Returns the final destination path for the download.
@@ -367,25 +399,21 @@ impl DownloadInner {
         drop(self.part_file);
 
         // Rename the .part file to the final file.
-        tokio::fs::rename(
+        fs::rename(
             &self.progress.destination.part_file,
             &self.progress.destination.path,
         )
         .await
         .map_err(|e| Error::Write {
             action: "renaming part file",
-            path: self.progress.destination.part_file,
+            path: self.progress.destination.part_file.clone(),
             cause: e,
         })?;
 
         // Delete the sidecar file.
-        let _ = tokio::fs::remove_file(&self.progress.destination.sidecar_file).await;
+        let _ = fs::remove_file(&self.progress.destination.sidecar_file).await;
 
-        Ok(DownloadResult {
-            tries: self.progress.tries,
-            path: self.progress.destination.path,
-            bytes_downloaded: self.progress.bytes_transferred,
-        })
+        Ok(DownloadResult::new(self.progress))
     }
 
     /// This is the "inner loop" of the download. Try to download the file, and return
