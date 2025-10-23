@@ -92,27 +92,11 @@ impl FileInfo {
         Ok(())
     }
 
-    #[cfg(feature = "async")]
-    /// Load the FileInfo from a sidecar file.
-    pub async fn load_from_disk(sidecar_file: &Path) -> Result<Self, Error> {
-        let mut info = FileInfo::default();
-        info.load(sidecar_file).await?;
-        Ok(info)
-    }
-
     /// Load the FileInfo from a sidecar file.
     #[cfg(feature = "async")]
     pub async fn load(&mut self, sidecar_file: &Path) -> Result<(), Error> {
         let contents = tokio::fs::read_to_string(sidecar_file).await;
         self.load_from(sidecar_file, contents)
-    }
-
-    #[cfg(feature = "blocking")]
-    /// Load the FileInfo from a sidecar file.
-    pub fn load_from_disk_blocking(sidecar_file: &Path) -> Result<Self, Error> {
-        let mut info = FileInfo::default();
-        info.load_blocking(sidecar_file)?;
-        Ok(info)
     }
 
     /// Load the FileInfo from a sidecar file, if it exists.

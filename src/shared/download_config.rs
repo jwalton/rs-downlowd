@@ -12,7 +12,7 @@ use crate::{
 /// Represents configuraton used to download a file.
 pub struct DownloadConfig {
     /// The URL we want to download from.
-    pub url: Uri,
+    pub uri: Uri,
     /// Headers to include in the request.
     pub headers: HeaderMap,
     /// The configured destination for the file, if any.  This could be a directory
@@ -40,7 +40,7 @@ impl DownloadConfig {
         };
 
         DownloadConfig {
-            url,
+            uri: url,
             headers: HeaderMap::new(),
             destination: None,
             max_retries: None,

@@ -47,6 +47,14 @@ pub fn open_file_for_writing(part_file: &Path) -> Result<std::fs::File, Error> {
             cause: e,
         })?;
 
+    // Get an exclusive lock to the file, to make sure no one else is writing to it.
+    file.lock().map_err(|e| Error::Write {
+            action: "locking file",
+            path: part_file.to_path_buf(),
+            cause: e,
+        }
+    )?;
+
     Ok(file)
 }
 
@@ -118,7 +126,6 @@ pub fn truncate_file(filename: &Path, file: &mut std::fs::File) -> Result<(), Er
         })?;
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {

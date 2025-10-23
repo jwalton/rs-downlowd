@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap, io::Write, path::PathBuf, sync::{Mutex, OnceLock}
+    collections::HashMap, fs, io::Write, path::{Path, PathBuf}, sync::{Mutex, OnceLock}
 };
 
 use rand::Fill;
@@ -104,4 +104,24 @@ pub fn big_file_url(size: usize) -> String {
 /// This will be the same file as returned by `big_file_url`.
 pub fn big_file_path(size: usize) -> PathBuf {
     big_file(size).path
+}
+
+pub fn write_sidecar_file(
+    path: &Path,
+    last_modified: Option<&str>,
+    etag: Option<&str>,
+    content_length: Option<u64>,
+) -> std::io::Result<()> {
+    let mut contents = String::new();
+    if let Some(last_modified) = last_modified {
+        contents.push_str(&format!("Last-Modified: {last_modified}\n"));
+    }
+    if let Some(etag) = etag {
+        contents.push_str(&format!("Etag: {etag}\n",));
+    }
+    if let Some(content_length) = content_length {
+        contents.push_str(&format!("File-Length: {content_length}\n"));
+    }
+    fs::write(path, contents)?;
+    Ok(())
 }

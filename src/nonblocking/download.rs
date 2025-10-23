@@ -2,7 +2,10 @@ use std::{path::Path, sync::Arc, time::Duration};
 
 use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
 use reqwest::Response;
-use tokio::{fs::{self, File}, io::AsyncWriteExt};
+use tokio::{
+    fs::{self, File},
+    io::AsyncWriteExt,
+};
 
 use crate::{
     DEFAULT_MAX_DELAY, DEFAULT_MIN_DELAY, DownloadResult, Error, Progress, ProgressHandle,
@@ -43,6 +46,10 @@ struct DownloadInner {
     retry_handler: RetryHandler,
     /// File we're writing to.
     part_file: File,
+    /// Information about the remote file, if we need to retrieve it.
+    head: Option<Head>,
+    /// Progress handle keeps track of information about the download, and is
+    /// send to the progress callback.
     progress: ProgressHandle,
 }
 
@@ -189,7 +196,7 @@ impl Download {
 
     async fn head(&mut self) -> &Head {
         if self.head.is_none() {
-            let head = Head::create(&self.client, &self.config.url, &self.config.headers)
+            let head = Head::create(&self.client, &self.config.uri, &self.config.headers)
                 .await
                 .unwrap_or_default();
             self.head = Some(head);
@@ -206,13 +213,6 @@ impl Download {
         head.get_remote_file_name()
     }
 
-    /// Try to get the length of the remote file.  This may return None if the
-    /// server doesn't provide a Content-Length header.
-    async fn get_remote_file_length(&mut self) -> Option<u64> {
-        let head = self.head().await;
-        head.get_remote_file_length()
-    }
-
     /// Send the download request to the server.
     pub async fn send(mut self) -> Result<DownloadResult, Error> {
         if let Some(e) = self.config.err {
@@ -222,66 +222,8 @@ impl Download {
         // Work out where we're ultimately going to save the file.
         let destination = self.resolve_destination().await?;
 
-        // TODO: Allow forcing the download if the file already exists.
-        if let Some(len) = self.recover(&destination).await {
-            // File already exists and is the correct length - nothing to do.
-            return Ok(DownloadResult {
-                tries: 0,
-                path: destination.path,
-                file_size: len,
-                bytes_downloaded: 0,
-            });
-        }
-
         let inner = DownloadInner::new(self, destination).await?;
         inner.download().await
-    }
-
-    /// Recover from an existing file, if possible.  This handles the corner cases
-    /// where we were close to being complete, but crashed or were cancelled
-    /// right at the end.  If ths local file is the correct length and is complete,
-    /// this returns the length of the file (indicating that the caller can skip
-    /// downloading the file).
-    async fn recover(&mut self, destination: &Destination) -> Option<u64> {
-        let local_part_length = fs::metadata(&destination.part_file)
-            .await
-            .ok()
-            .map(|m| m.len());
-
-        if local_part_length.is_some() {
-            // We're partway through downloading the file.  Let the download continue.
-            // If the part file is at 100% done, this will get handled below.
-            return None;
-        }
-
-        let local_length = fs::metadata(&destination.path)
-            .await
-            .ok()
-            .map(|m| m.len());
-
-        if let Some(local_length) = local_length {
-            let file_info = FileInfo::load_from_disk(&destination.sidecar_file)
-                .await
-                .ok();
-            let remote_length =
-                if let Some(remote_length) = file_info.as_ref().and_then(|f| f.file_length) {
-                    Some(remote_length)
-                } else {
-                    self.get_remote_file_length().await
-                };
-
-            if let Some(remote_length) = remote_length
-                && local_length == remote_length
-            {
-                // We have a copy of the file locally, which appears to be the correct length.
-                if file_info.is_some() {
-                    let _ = fs::remove_file(&destination.sidecar_file).await;
-                }
-                return Some(local_length)
-            }
-        }
-
-        None
     }
 
     /// Returns the final destination path for the download.
@@ -299,6 +241,14 @@ impl Download {
 
 impl DownloadInner {
     async fn new(dl: Download, destination: Destination) -> Result<Self, Error> {
+        // Open the part file for writing.  We do this first thing, because this also
+        // takes a lock for the file, so now we know we're in control of this file
+        // and no other processes should be reading/writing to it.
+        let mut part_file =
+            utils::file::open_file_for_writing_async(&destination.part_file).await?;
+        let file_length =
+            utils::file::get_file_length_async(&mut part_file, &destination.part_file).await?;
+
         // Use information provided by the user, or else load from the sidecar file if it exists.
         let mut local_file_info = dl.config.user_provided_local_file_info;
         if local_file_info.etag.is_none() && local_file_info.last_modified.is_none() {
@@ -306,17 +256,11 @@ impl DownloadInner {
             let _ = local_file_info.load(&destination.sidecar_file).await;
         }
 
-        // Open the part file for writing.
-        let mut part_file =
-            utils::file::open_file_for_writing_async(&destination.part_file).await?;
-        let file_length =
-            utils::file::get_file_length_async(&mut part_file, &destination.part_file).await?;
-
         // This is the single instance of `ProgressHandle` that we'll update
         // and pass to the progress handler throughout the download.
         let progress = ProgressHandle::new(
-            dl.config.url,
-            dl.head.and_then(|h| h.updated_uri),
+            dl.config.uri,
+            dl.head.as_ref().and_then(|h| h.updated_uri.clone()),
             destination,
             local_file_info,
             file_length,
@@ -330,85 +274,126 @@ impl DownloadInner {
             progress_handler: dl.config.progress_handler,
             retry_handler: dl.config.retry_handler,
             part_file,
+            head: dl.head,
             progress,
         })
+    }
+
+    /// Recover from an existing file, if possible.  This handles the corner cases
+    /// where we were close to being complete, but crashed or were cancelled
+    /// right at the end.  If ths local file is the correct length and is complete,
+    /// this returns true (indicating that the caller can skip
+    /// downloading the file).
+    async fn recover(&mut self) -> bool {
+        // See if the "final" file exists.
+        let local_length = fs::metadata(&self.progress.destination.path)
+            .await
+            .ok()
+            .map(|m| m.len());
+
+        if let Some(local_length) = local_length {
+            let remote_length = match self.progress.remote_length() {
+                Some(remote_length) => Some(remote_length),
+                None => {
+                    if self.head.is_none() {
+                        let head = Head::create(&self.client, self.progress.uri(), &self.headers)
+                            .await
+                            .unwrap_or_default();
+                        self.head = Some(head);
+                 }
+                self.head.as_ref().unwrap().get_remote_file_length()
+                }
+            };
+
+            if remote_length == Some(local_length) {
+                // Seems like we have the whole file.  We can just delete the part
+                // file and sidecar file.
+                return true;
+            }
+        }
+
+        false
     }
 
     async fn download(mut self) -> Result<DownloadResult, Error> {
         let mut retries = 0;
 
-        loop {
-            if self.progress.is_complete() == Some(true) {
-                // We already have the whole file!
-                break;
-            }
+        if self.recover().await {
+            // All done!
+            let _ = fs::remove_file(&self.progress.destination.part_file).await;
+        } else {
+            loop {
+                if self.progress.is_complete() == Some(true) {
+                    // We already have the whole file!
+                    break;
+                }
 
-            self.progress.tries += 1;
-            retries += 1;
+                self.progress.tries += 1;
+                retries += 1;
 
-            let bytes_before = self.progress.bytes_transferred;
-            match self.try_download().await {
-                Ok(()) => break,
-                Err(e) => {
-                    if !e.can_retry() {
-                        return Err(e);
-                    } else {
-                        if self.progress.bytes_transferred > bytes_before {
-                            // We made some progress - reset the retry counter.
-                            retries = 0;
-                        }
-                        if let Some(max_retries) = self.max_retries
-                            && retries > max_retries
-                        {
+                let bytes_before = self.progress.bytes_transferred;
+                match self.try_download().await {
+                    Ok(()) => break,
+                    Err(e) => {
+                        if !e.can_retry() {
                             return Err(e);
-                        }
-
-                        // Set a default delay, in case the retry handler doesn't.
-                        let delay = if matches!(e, Error::FileChanged { .. }) {
-                            // The file has changed on the server - we need to start again.
-                            utils::file::truncate_file_async(
-                                &self.progress.destination.part_file,
-                                &mut self.part_file,
-                            )
-                            .await?;
-                            self.progress.reset().await;
-                            Duration::from_secs(0)
                         } else {
-                            crate::exponential_backoff(
-                                DEFAULT_MIN_DELAY,
-                                DEFAULT_MAX_DELAY,
-                                retries,
-                            )
-                        };
+                            if self.progress.bytes_transferred > bytes_before {
+                                // We made some progress - reset the retry counter.
+                                retries = 0;
+                            }
+                            if let Some(max_retries) = self.max_retries
+                                && retries > max_retries
+                            {
+                                return Err(e);
+                            }
 
-                        let mut retry_handle =
-                            RetryHandle::new(self.progress.tries, retries, delay, e);
-                        (self.retry_handler)(&mut retry_handle);
-                        if retry_handle.cancelled {
-                            return Err(retry_handle.error);
+                            // Set a default delay, in case the retry handler doesn't.
+                            let delay = if matches!(e, Error::FileChanged { .. }) {
+                                // The file has changed on the server - we need to start again.
+                                utils::file::truncate_file_async(
+                                    &self.progress.destination.part_file,
+                                    &mut self.part_file,
+                                )
+                                .await?;
+                                self.progress.reset().await;
+                                Duration::from_secs(0)
+                            } else {
+                                crate::exponential_backoff(
+                                    DEFAULT_MIN_DELAY,
+                                    DEFAULT_MAX_DELAY,
+                                    retries,
+                                )
+                            };
+
+                            let mut retry_handle =
+                                RetryHandle::new(self.progress.tries, retries, delay, e);
+                            (self.retry_handler)(&mut retry_handle);
+                            if retry_handle.cancelled {
+                                return Err(retry_handle.error);
+                            }
+
+                            tokio::time::sleep(retry_handle.delay).await;
                         }
-
-                        tokio::time::sleep(retry_handle.delay).await;
                     }
                 }
             }
+
+            // Rename the .part file to the final file.
+            fs::rename(
+                &self.progress.destination.part_file,
+                &self.progress.destination.path,
+            )
+            .await
+            .map_err(|e| Error::Write {
+                action: "renaming part file",
+                path: self.progress.destination.part_file.clone(),
+                cause: e,
+            })?;
         }
 
-        // We're all done! Close the part_file.
-        self.part_file.flush().await.ok();
+        // Close the part_file.
         drop(self.part_file);
-
-        // Rename the .part file to the final file.
-        fs::rename(
-            &self.progress.destination.part_file,
-            &self.progress.destination.path,
-        )
-        .await
-        .map_err(|e| Error::Write {
-            action: "renaming part file",
-            path: self.progress.destination.part_file.clone(),
-            cause: e,
-        })?;
 
         // Delete the sidecar file.
         let _ = fs::remove_file(&self.progress.destination.sidecar_file).await;
@@ -532,7 +517,8 @@ impl DownloadInner {
 
             let chunk_size = chunk.len() as u64;
             bytes_downloaded += chunk_size;
-            self.progress.notify_bytes_written(&mut self.progress_handler, chunk_size)?;
+            self.progress
+                .notify_bytes_written(&mut self.progress_handler, chunk_size)?;
 
             // Let the rate limiter know we downloaded some bytes.
             self.limiter.bytes_consumed(chunk.len() as u64).await;

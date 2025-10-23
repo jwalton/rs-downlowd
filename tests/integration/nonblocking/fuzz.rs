@@ -55,7 +55,27 @@ async fn should_work_when_cancelled() -> Result<(), Box<dyn std::error::Error>> 
     let expected_contents = tokio::fs::read(&big_file).await?;
     let actual_contents = tokio::fs::read(&destination).await?;
     assert_eq!(actual_contents.len(), file_size);
-    assert!(expected_contents == actual_contents);
+
+    let mut diff_start = None;
+    if expected_contents != actual_contents {
+        for i in 0..expected_contents.len() {
+            if diff_start.is_none() && expected_contents[i] != actual_contents[i] {
+                diff_start = Some(i);
+            } else if diff_start.is_some() && expected_contents == actual_contents {
+                println!("Diff from {} to {i}", diff_start.unwrap());
+                diff_start = None;
+            }
+        }
+
+        if let Some(diff_start) = diff_start {
+            println!("Diff from {diff_start} to end");
+        }
+
+        let _ = tokio::fs::write("/tmp/expected", expected_contents).await;
+        let _ = tokio::fs::write("/tmp/actual", actual_contents).await;
+        panic!("Conents are wrong");
+    }
+
     assert_eq!(
         actual_contents.len() as u64,
         bytes_downloaded.load(Ordering::SeqCst)

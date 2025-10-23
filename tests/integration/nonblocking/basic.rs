@@ -6,7 +6,7 @@ use temp_dir::TempDir;
 
 use crate::integration::{
     constants::SERVER_URL,
-    utils::{self, ProgressRecord, ProgressRecorder},
+    utils::{self, write_sidecar_file, ProgressRecord, ProgressRecorder},
 };
 
 const MESSAGE: &str = "hello world";
@@ -74,8 +74,12 @@ async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::err
     let url = format!("{SERVER_URL}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
+    let part_file = dir.path().join("my-file.txt.part");
+    let sidecar_file = dir.path().join("my-file.txt.downloadinfo");
+
 
     tokio::fs::write(&destination, MESSAGE).await?;
+    write_sidecar_file(&sidecar_file, None, None, Some(MESSAGE.len() as u64))?;
 
     let client = Client::new();
     let result = client
@@ -95,6 +99,12 @@ async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::err
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
     assert_eq!(file_contents, MESSAGE);
     assert_eq!(result.bytes_downloaded, 0);
+
+    // Sidecard file should not exists.
+    tokio::fs::metadata(sidecar_file).await.unwrap_err();
+    // Partfile should not exist.
+    tokio::fs::metadata(part_file).await.unwrap_err();
+
 
     Ok(())
 }

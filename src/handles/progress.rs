@@ -21,8 +21,8 @@ pub struct ProgressHandle {
     /// The number of bytes transferred since the last time the progress
     /// handler was called.
     pub(crate) delta: u64,
-    /// Cached information about the local file, either from reading the sidecar
-    /// file, or fetched from the server.
+    /// Cached information about the downloaded copy of the file, either from
+    /// reading the sidecar file, or fetched from the server.
     pub(crate) local_file_info: FileInfo,
     /// True if the download has been cancelled.
     pub(crate) cancelled: bool,

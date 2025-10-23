@@ -1,34 +1,14 @@
-use std::{fs, path::Path};
+use std::fs;
 
 use downlowd::blocking::Client;
 use temp_dir::TempDir;
 
 use crate::integration::{
     constants::SERVER_URL,
-    utils::{self, ProgressRecord, ProgressRecorder},
+    utils::{self, ProgressRecord, ProgressRecorder, write_sidecar_file},
 };
 
 const MESSAGE: &str = "hello world";
-
-fn write_sidecar_file(
-    path: &Path,
-    last_modified: Option<&str>,
-    etag: Option<&str>,
-    content_length: Option<u64>,
-) -> std::io::Result<()> {
-    let mut contents = String::new();
-    if let Some(last_modified) = last_modified {
-        contents.push_str(&format!("Last-Modified: {last_modified}\n"));
-    }
-    if let Some(etag) = etag {
-        contents.push_str(&format!("Etag: {etag}\n",));
-    }
-    if let Some(content_length) = content_length {
-        contents.push_str(&format!("File-Length: {content_length}\n"));
-    }
-    fs::write(path, contents)?;
-    Ok(())
-}
 
 #[test]
 fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {

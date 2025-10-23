@@ -51,6 +51,10 @@ struct DownloadInner {
     retry_handler: RetryHandler,
     /// File we're writing to.
     part_file: File,
+    /// Information about the remote file, if we need to retrieve it.
+    head: Option<Head>,
+    /// Progress handle keeps track of information about the download, and is
+    /// send to the progress callback.
     progress: ProgressHandle,
 }
 
@@ -195,7 +199,8 @@ impl Download {
 
     fn head(&mut self) -> &Head {
         if self.head.is_none() {
-            let head = Head::create_blocking(&self.agent, &self.config).unwrap_or_default();
+            let head = Head::create_blocking(&self.agent, &self.config.uri, &self.config.headers)
+                .unwrap_or_default();
             self.head = Some(head);
         }
         self.head.as_ref().unwrap()
@@ -210,13 +215,6 @@ impl Download {
         head.get_remote_file_name()
     }
 
-    /// Try to get the length of the remote file.  This may return None if the
-    /// server doesn't provide a Content-Length header.
-    fn get_remote_file_length(&mut self) -> Option<u64> {
-        let head = self.head();
-        head.get_remote_file_length()
-    }
-
     /// Send the download request to the server.
     pub fn send(mut self) -> Result<DownloadResult, Error> {
         if let Some(e) = self.config.err {
@@ -226,60 +224,8 @@ impl Download {
         // Work out where we're ultimately going to save the file.
         let destination = self.resolve_destination()?;
 
-        // TODO: Allow forcing the download if the file already exists.
-        if let Some(len) = self.recover(&destination) {
-            // File already exists and is the correct length - nothing to do.
-            return Ok(DownloadResult {
-                tries: 0,
-                path: destination.path,
-                file_size: len,
-                bytes_downloaded: 0,
-            });
-        }
-
         let inner = DownloadInner::new(self, destination)?;
         inner.download()
-    }
-
-    /// Recover from an existing file, if possible.  This handles the corner cases
-    /// where we were close to being complete, but crashed or were cancelled
-    /// right at the end.  If ths local file is the correct length and is complete,
-    /// this returns the length of the file (indicating that the caller can skip
-    /// downloading the file).
-    fn recover(&mut self, destination: &Destination) -> Option<u64> {
-        let local_part_length = fs::metadata(&destination.part_file)
-            .ok()
-            .map(|m| m.len());
-
-        if local_part_length.is_some() {
-            // We're partway through downloading the file.  Let the download continue.
-            // If the part file is at 100% done, this will get handled below.
-            return None;
-        }
-
-        let local_length = fs::metadata(&destination.path).ok().map(|m| m.len());
-
-        if let Some(local_length) = local_length {
-            let file_info = FileInfo::load_from_disk_blocking(&destination.sidecar_file).ok();
-            let remote_length =
-                if let Some(remote_length) = file_info.as_ref().and_then(|f| f.file_length) {
-                    Some(remote_length)
-                } else {
-                    self.get_remote_file_length()
-                };
-
-            if let Some(remote_length) = remote_length
-                && local_length == remote_length
-            {
-                // We have a copy of the file locally, which appears to be the correct length.
-                if file_info.is_some() {
-                    let _ = fs::remove_file(&destination.sidecar_file);
-                }
-                return Some(local_length);
-            }
-        }
-
-        None
     }
 
     /// Returns the final destination path for the download.
@@ -301,14 +247,9 @@ impl Download {
 
 impl DownloadInner {
     fn new(dl: Download, destination: Destination) -> Result<Self, Error> {
-        // Use information provided by the user, or else load from the sidecar file if it exists.
-        let mut local_file_info = dl.config.user_provided_local_file_info;
-        if local_file_info.etag.is_none() && local_file_info.last_modified.is_none() {
-            // User didn't tell us anything...
-            let _ = local_file_info.load_blocking(&destination.sidecar_file);
-        }
-
-        // Open the part file for writing.
+        // Open the part file for writing.  We do this first thing, because this also
+        // takes a lock for the file, so now we know we're in control of this file
+        // and no other processes should be reading/writing to it.
         let part_file = utils::file::open_file_for_writing(&destination.part_file)?;
         let file_length = part_file
             .metadata()
@@ -319,11 +260,18 @@ impl DownloadInner {
             })?
             .len();
 
+        // Use information provided by the user, or else load from the sidecar file if it exists.
+        let mut local_file_info = dl.config.user_provided_local_file_info;
+        if local_file_info.etag.is_none() && local_file_info.last_modified.is_none() {
+            // User didn't tell us anything...
+            let _ = local_file_info.load_blocking(&destination.sidecar_file);
+        }
+
         // This is the single instance of `ProgressHandle` that we'll update
         // and pass to the progress handler throughout the download.
         let progress = ProgressHandle::new(
-            dl.config.url,
-            dl.head.and_then(|h| h.updated_uri),
+            dl.config.uri,
+            dl.head.as_ref().and_then(|h| h.updated_uri.clone()),
             destination,
             local_file_info,
             file_length,
@@ -337,83 +285,123 @@ impl DownloadInner {
             progress_handler: dl.config.progress_handler,
             retry_handler: dl.config.retry_handler,
             part_file,
+            head: dl.head,
             progress,
         })
+    }
+
+    /// Recover from an existing file, if possible.  This handles the corner cases
+    /// where we were close to being complete, but crashed or were cancelled
+    /// right at the end.  If ths local file is the correct length and is complete,
+    /// this returns true (indicating that the caller can skip
+    /// downloading the file).
+    fn recover(&mut self) -> bool {
+        // See if the "final" file exists.
+        let local_length = fs::metadata(&self.progress.destination.path)
+            .ok()
+            .map(|m| m.len());
+
+        if let Some(local_length) = local_length {
+            let remote_length = match self.progress.remote_length() {
+                Some(remote_length) => Some(remote_length),
+                None => {
+                    if self.head.is_none() {
+                        let head =
+                            Head::create_blocking(&self.agent, self.progress.uri(), &self.headers)
+                                .unwrap_or_default();
+                        self.head = Some(head);
+                    }
+                    self.head.as_ref().unwrap().get_remote_file_length()
+                }
+            };
+
+            if remote_length == Some(local_length) {
+                // Seems like we have the whole file.  We can just delete the part
+                // file and sidecar file.
+                return true;
+            }
+        }
+
+        false
     }
 
     fn download(mut self) -> Result<DownloadResult, Error> {
         let mut retries = 0;
 
-        loop {
-            if self.progress.is_complete() == Some(true) {
-                // We already have the whole file!
-                break;
-            }
+        if self.recover() {
+            // All done!
+            let _ = fs::remove_file(&self.progress.destination.part_file);
+        } else {
+            loop {
+                if self.progress.is_complete() == Some(true) {
+                    // We already have the whole file!
+                    break;
+                }
 
-            self.progress.tries += 1;
-            retries += 1;
+                self.progress.tries += 1;
+                retries += 1;
 
-            let bytes_before = self.progress.bytes_transferred;
-            match self.try_download() {
-                Ok(()) => break,
-                Err(e) => {
-                    if !e.can_retry() {
-                        return Err(e);
-                    } else {
-                        if self.progress.bytes_transferred > bytes_before {
-                            // We made some progress - reset the retry counter.
-                            retries = 0;
-                        }
-                        if let Some(max_retries) = self.max_retries
-                            && retries > max_retries
-                        {
+                let bytes_before = self.progress.bytes_transferred;
+                match self.try_download() {
+                    Ok(()) => break,
+                    Err(e) => {
+                        if !e.can_retry() {
                             return Err(e);
-                        }
-
-                        // Set a default delay, in case the retry handler doesn't.
-                        let delay = if matches!(e, Error::FileChanged { .. }) {
-                            // The file has changed on the server - we need to start again.
-                            utils::file::truncate_file(
-                                &self.progress.destination.part_file,
-                                &mut self.part_file,
-                            )?;
-                            self.progress.reset_blocking();
-                            Duration::from_secs(0)
                         } else {
-                            crate::exponential_backoff(
-                                DEFAULT_MIN_DELAY,
-                                DEFAULT_MAX_DELAY,
-                                retries,
-                            )
-                        };
+                            if self.progress.bytes_transferred > bytes_before {
+                                // We made some progress - reset the retry counter.
+                                retries = 0;
+                            }
+                            if let Some(max_retries) = self.max_retries
+                                && retries > max_retries
+                            {
+                                return Err(e);
+                            }
 
-                        let mut retry_handle =
-                            RetryHandle::new(self.progress.tries, retries, delay, e);
-                        (self.retry_handler)(&mut retry_handle);
-                        if retry_handle.cancelled {
-                            return Err(retry_handle.error);
+                            // Set a default delay, in case the retry handler doesn't.
+                            let delay = if matches!(e, Error::FileChanged { .. }) {
+                                // The file has changed on the server - we need to start again.
+                                utils::file::truncate_file(
+                                    &self.progress.destination.part_file,
+                                    &mut self.part_file,
+                                )?;
+                                self.progress.reset_blocking();
+                                Duration::from_secs(0)
+                            } else {
+                                crate::exponential_backoff(
+                                    DEFAULT_MIN_DELAY,
+                                    DEFAULT_MAX_DELAY,
+                                    retries,
+                                )
+                            };
+
+                            let mut retry_handle =
+                                RetryHandle::new(self.progress.tries, retries, delay, e);
+                            (self.retry_handler)(&mut retry_handle);
+                            if retry_handle.cancelled {
+                                return Err(retry_handle.error);
+                            }
+
+                            thread::sleep(retry_handle.delay);
                         }
-
-                        thread::sleep(retry_handle.delay);
                     }
                 }
             }
+
+            // Rename the .part file to the final file.
+            fs::rename(
+                &self.progress.destination.part_file,
+                &self.progress.destination.path,
+            )
+            .map_err(|e| Error::Write {
+                action: "renaming part file",
+                path: self.progress.destination.part_file.clone(),
+                cause: e,
+            })?;
         }
 
-        // We're all done! Close the part_file.
-        self.part_file.flush().ok();
+        // Close the part_file.
         drop(self.part_file);
-
-        // Rename the .part file to the final file.
-        fs::rename(
-            &self.progress.destination.part_file,
-            &self.progress.destination.path,
-        )
-        .map_err(|e| Error::Write {
-            action: "renaming part file",
-            path: self.progress.destination.part_file.clone(),
-            cause: e,
-        })?;
 
         // Delete the sidecar file.
         let _ = fs::remove_file(&self.progress.destination.sidecar_file);

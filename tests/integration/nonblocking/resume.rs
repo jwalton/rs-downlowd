@@ -1,35 +1,13 @@
-use std::path::Path;
-
 use downlowd::Client;
 use temp_dir::TempDir;
 use tokio::fs;
 
 use crate::integration::{
     constants::SERVER_URL,
-    utils::{self, ProgressRecord, ProgressRecorder},
+    utils::{self, write_sidecar_file, ProgressRecord, ProgressRecorder},
 };
 
 const MESSAGE: &str = "hello world";
-
-async fn write_sidecar_file(
-    path: &Path,
-    last_modified: Option<&str>,
-    etag: Option<&str>,
-    content_length: Option<u64>,
-) -> std::io::Result<()> {
-    let mut contents = String::new();
-    if let Some(last_modified) = last_modified {
-        contents.push_str(&format!("Last-Modified: {last_modified}\n"));
-    }
-    if let Some(etag) = etag {
-        contents.push_str(&format!("Etag: {etag}\n",));
-    }
-    if let Some(content_length) = content_length {
-        contents.push_str(&format!("File-Length: {content_length}\n"));
-    }
-    fs::write(path, contents).await?;
-    Ok(())
-}
 
 #[tokio::test]
 async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
@@ -95,8 +73,7 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
         Some(&head.last_modified),
         Some(&head.etag),
         Some(head.content_length),
-    )
-    .await?;
+    )?;
 
     let client = Client::new();
     let result = client
@@ -144,8 +121,7 @@ async fn should_not_continue_a_file_from_sidecar_if_length_etag_changed()
         Some(&head.last_modified),
         Some("wrong"),
         Some(head.content_length),
-    )
-    .await?;
+    )?;
 
     let client = Client::new();
     let result = client
@@ -186,8 +162,7 @@ async fn should_not_continue_a_file_from_sidecar_if_length_has_changed()
         Some(&head.last_modified),
         Some(&head.etag),
         Some(5),
-    )
-    .await?;
+    )?;
 
     let client = Client::new();
     let result = client
@@ -224,8 +199,7 @@ async fn should_continue_a_file_from_sidecar_that_is_already_complete_and_rename
         Some(&head.last_modified),
         Some(&head.etag),
         Some(head.content_length),
-    )
-    .await?;
+    )?;
 
     let result = Client::new()
         .get(&url)
@@ -322,8 +296,7 @@ async fn should_prefer_user_etag_over_sidecar_file() -> Result<(), Box<dyn std::
         Some(&head.last_modified),
         Some("wrong"),
         Some(head.content_length),
-    )
-    .await?;
+    )?;
 
     let client = Client::new();
     let result = client
