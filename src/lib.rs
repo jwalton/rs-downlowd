@@ -4,11 +4,13 @@ mod backoff;
 mod client_builder;
 mod destination;
 mod error;
+mod feat;
 mod file_info;
 mod handles;
 mod head;
 mod headers;
 mod limiter;
+mod maybe_async;
 mod shared;
 mod utils;
 
@@ -26,9 +28,9 @@ pub mod blocking;
 #[cfg(feature = "async")]
 mod nonblocking;
 #[cfg(feature = "async")]
-pub use nonblocking::{Client, Download};
-#[cfg(feature = "async")]
 pub use client_builder::ClientBuilder;
+#[cfg(feature = "async")]
+pub use nonblocking::{Client, Download};
 
 /// Default number of retries for a download.
 const DEFAULT_MAX_RETRIES: Option<u64> = Some(5);

@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use tokio::select;
 
-use crate::limiter::{TokenBucket, UNLIMITED};
+use crate::{limiter::{TokenBucket, UNLIMITED}, maybe_async};
 
 pub struct TokioTokenBucket {
     ever_enabled: AtomicBool,
@@ -61,6 +61,17 @@ impl TokioTokenBucket {
         }
     }
 }
+
+impl maybe_async::Limiter for TokioTokenBucket {
+    async fn bytes_consumed(&self, bytes: u64) {
+        self.bytes_consumed(bytes).await;
+    }
+
+    async fn wait(&self) {
+        self.wait().await;
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

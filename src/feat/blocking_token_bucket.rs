@@ -1,12 +1,15 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering}, Mutex
+        Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    thread,
     time::Duration,
 };
 
-use crate::limiter::{TokenBucket, UNLIMITED};
+use crate::{
+    limiter::{TokenBucket, UNLIMITED},
+    maybe_async::Limiter,
+};
 
 /// Thread safe token-bucket rate limiter.
 pub struct BlockingTokenBucket {
@@ -50,7 +53,7 @@ impl BlockingTokenBucket {
     }
 
     /// Called to wait until the caller can download more bytes.
-    pub fn wait(&self) {
+    pub async fn wait(&self) {
         // If we've never turned on the limiter, bypass it.
         if !self.ever_enabled.load(Ordering::Relaxed) {
             return;
@@ -65,7 +68,17 @@ impl BlockingTokenBucket {
             // having to wait a long time here, but if they change it back, we
             // want to respond to that change quickly.
             let delay = delay.min(Duration::from_millis(100));
-            thread::sleep(delay);
+            std::thread::sleep(delay);
         }
+    }
+}
+
+impl Limiter for BlockingTokenBucket {
+    async fn bytes_consumed(&self, bytes: u64) {
+        self.bytes_consumed(bytes);
+    }
+
+    async fn wait(&self) {
+        self.wait().await;
     }
 }

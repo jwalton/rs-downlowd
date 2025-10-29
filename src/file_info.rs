@@ -1,4 +1,4 @@
-use std::{io, path::Path};
+use std::{path::Path};
 
 use http::{HeaderMap, StatusCode};
 
@@ -93,24 +93,11 @@ impl FileInfo {
     }
 
     /// Load the FileInfo from a sidecar file.
-    #[cfg(feature = "async")]
-    pub async fn load(&mut self, sidecar_file: &Path) -> Result<(), Error> {
-        let contents = tokio::fs::read_to_string(sidecar_file).await;
-        self.load_from(sidecar_file, contents)
-    }
-
-    /// Load the FileInfo from a sidecar file, if it exists.
-    #[cfg(feature = "blocking")]
-    pub fn load_blocking(&mut self, sidecar_file: &Path) -> Result<(), Error> {
-        let contents = std::fs::read_to_string(sidecar_file);
-        self.load_from(sidecar_file, contents)
-    }
-
-    fn load_from(
+    pub async fn load<F: crate::maybe_async::File>(
         &mut self,
         sidecar_file: &Path,
-        contents: Result<String, io::Error>,
     ) -> Result<(), Error> {
+        let contents = F::read_to_string(sidecar_file).await;
         match contents {
             Ok(contents) => self.deserialize(&contents),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -123,33 +110,24 @@ impl FileInfo {
     }
 
     /// Write the FileInfo to a sidecar file.
-    #[cfg(feature = "async")]
-    pub async fn save(&self, sidecar_file: &Path) {
-        let _ = tokio::fs::write(sidecar_file, self.serialize()).await;
-    }
-
-    /// Write the FileInfo to a sidecar file.
-    #[cfg(feature = "blocking")]
-    pub fn save_blocking(&self, sidecar_file: &Path) {
-        let _ = std::fs::write(sidecar_file, self.serialize());
-    }
-
-    /// Reset the FileInfo and delete the sidecar file.
-    #[cfg(feature = "async")]
-    pub async fn reset(&mut self, sidecar_file: &Path) {
-        self.file_length = None;
-        self.last_modified = None;
-        self.etag = None;
-        let _ = tokio::fs::remove_file(sidecar_file).await;
+    pub async fn save<F: crate::maybe_async::File>(
+        &self,
+        sidecar_file: &Path,
+    ) {
+        // TODO: Write this atomic?
+        if let Ok(mut file) = F::open_for_writing(sidecar_file).await {
+            let Ok(()) = file.truncate().await else { return; };
+            let _ = file.write_all(self.serialize().as_bytes()).await;
+            let _ = file.sync_all().await;
+        }
     }
 
     /// Reset the FileInfo and delete the sidecar file.
-    #[cfg(feature = "blocking")]
-    pub fn reset_blocking(&mut self, sidecar_file: &Path) {
+    pub async fn reset<F: crate::maybe_async::File>(&mut self, sidecar_file: &Path) {
         self.file_length = None;
         self.last_modified = None;
         self.etag = None;
-        let _ = std::fs::remove_file(sidecar_file);
+        let _ = F::remove_file(sidecar_file).await;
     }
 
     /// When called on local file info, returns an error if the passed in remote file

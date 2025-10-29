@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use crate::{
     ClientBuilder, Error, IntoUri,
-    nonblocking::{download::Download, tokio_tokenbucket::TokioTokenBucket},
+    feat::{reqwest_client::ReqwestClient, tokio_token_bucket::TokioTokenBucket},
+    nonblocking::download::Download,
     shared::DownloadConfig,
 };
 
@@ -12,7 +13,7 @@ use crate::{
 /// downloads.  Clients are cheap to clone.
 #[derive(Clone)]
 pub struct Client {
-    client: reqwest::Client,
+    client: ReqwestClient,
     default_max_retries: Option<u64>,
     limiter: Arc<TokioTokenBucket>,
 }
@@ -34,7 +35,7 @@ impl ClientBuilder {
             .expect("Failed to create HTTP client");
 
         Ok(Client::new_inner(
-            client,
+            ReqwestClient::new(client),
             self.default_max_retries,
             self.max_bytes_per_second,
         ))
@@ -48,7 +49,7 @@ impl Client {
     }
 
     pub(crate) fn new_inner(
-        client: reqwest::Client,
+        client: ReqwestClient,
         default_max_retries: Option<u64>,
         max_bytes_per_second: Option<u64>,
     ) -> Self {

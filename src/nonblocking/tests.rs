@@ -7,7 +7,7 @@ use httptest::{
 };
 use temp_dir::TempDir;
 
-use crate::ClientBuilder;
+use crate::{ClientBuilder, Error};
 
 use super::*;
 

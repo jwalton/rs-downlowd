@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use crate::{
     IntoUri,
-    blocking::{BlockingClientBuilder, download::Download, tokenbucket::BlockingTokenBucket},
+    blocking::{BlockingClientBuilder, download::Download},
+    feat::{blocking_token_bucket::BlockingTokenBucket, ureq_client::UreqClient},
     shared::DownloadConfig,
 };
 
@@ -12,7 +13,7 @@ use crate::{
 /// downloads.  Clients are cheap to clone.
 #[derive(Clone)]
 pub struct Client {
-    agent: ureq::Agent,
+    client: UreqClient,
     default_max_retries: Option<u64>,
     limiter: Arc<BlockingTokenBucket>,
 }
@@ -31,7 +32,7 @@ impl Client {
         let limiter = Arc::new(BlockingTokenBucket::new(max_bytes_per_second));
 
         Self {
-            agent,
+            client: UreqClient::new(agent),
             default_max_retries,
             limiter,
         }
@@ -60,7 +61,7 @@ impl Client {
         let mut config = DownloadConfig::new(uri);
         config.max_retries(self.default_max_retries);
 
-        Download::new(self.agent.clone(), self.limiter.clone(), config)
+        Download::new(self.client.clone(), self.limiter.clone(), config)
     }
 
     /// Update the maximum bytes per second that can be downloaded. This limit
