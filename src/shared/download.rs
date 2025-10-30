@@ -323,7 +323,6 @@ where
                 .chunk(self.progress.uri())
                 .await
                 .map_err(|cause| Error::Network {
-                    during: "read",
                     uri: self.progress.uri().to_string(),
                     cause: cause.to_string(),
                 })?

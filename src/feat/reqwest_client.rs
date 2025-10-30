@@ -21,12 +21,8 @@ impl maybe_async::Response for Response {
         self.inner.headers()
     }
 
-    async fn chunk(&mut self, uri: &Uri) -> Result<Option<Bytes>, Error> {
-        self.inner.chunk().await.map_err(|cause| Error::Network {
-            during: "read",
-            uri: uri.to_string(),
-            cause: cause.without_url().to_string(),
-        })
+    async fn chunk(&mut self, _uri: &Uri) -> Result<Option<Bytes>, Error> {
+        Ok(self.inner.chunk().await?)
     }
 }
 
@@ -63,11 +59,6 @@ impl maybe_async::Client for ReqwestClient {
         headers: HeaderMap,
     ) -> (Option<Uri>, Result<Self::Response, crate::Error>) {
         let url = uri.to_string();
-        let method_name = match method {
-            reqwest::Method::GET => "GET",
-            reqwest::Method::HEAD => "HEAD",
-            _ => "REQUEST",
-        };
 
         // Reqwest follows redirect automatically.
         let response = self
@@ -75,25 +66,12 @@ impl maybe_async::Client for ReqwestClient {
             .request(method, &url)
             .headers(headers)
             .send()
-            .await
-            .map_err(|cause| {
-                if cause.is_redirect() {
-                    Error::BadRedirect {
-                        reason: "too many redirects",
-                    }
-                } else {
-                    Error::Network {
-                        during: method_name,
-                        uri: url.clone(),
-                        cause: cause.without_url().to_string(),
-                    }
-                }
-            });
+            .await;
 
         let response = match response {
             Ok(r) => r,
             Err(e) => {
-                return (None, Err(e));
+                return (None, Err(e.into()));
             }
         };
 
@@ -105,5 +83,20 @@ impl maybe_async::Client for ReqwestClient {
         };
 
         (returned_uri, Ok(Response { inner: response }))
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(value: reqwest::Error) -> Self {
+        if value.is_redirect() {
+            Error::BadRedirect {
+                reason: "too many redirects",
+            }
+        } else {
+            Error::Network {
+                uri: value.url().map(|u| u.to_string()).unwrap_or_default(),
+                cause: value.without_url().to_string(),
+            }
+        }
     }
 }

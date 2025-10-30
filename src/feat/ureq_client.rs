@@ -31,7 +31,6 @@ impl maybe_async::Response for Response {
         let mut reader = self.inner.body_mut().as_reader();
 
         let n = reader.read(&mut buf).map_err(|cause| Error::Network {
-            during: "read",
             uri: uri.to_string(),
             cause: cause.to_string(),
         })?;
@@ -76,12 +75,6 @@ impl maybe_async::Client for UreqClient {
         uri: &Uri,
         headers: HeaderMap,
     ) -> (Option<Uri>, Result<Self::Response, crate::Error>) {
-        let method_name = match method {
-            Method::GET => "GET",
-            Method::HEAD => "HEAD",
-            _ => "REQUEST",
-        };
-
         let mut request = ::http::Request::builder().uri(uri).method(method);
         if let Some(h) = request.headers_mut() {
             for (k, v) in headers.iter() {
@@ -108,7 +101,6 @@ impl maybe_async::Client for UreqClient {
                 reason: "too many redirects",
             },
             _ => Error::Network {
-                during: method_name,
                 uri: uri.to_string(),
                 cause: err.to_string(),
             },

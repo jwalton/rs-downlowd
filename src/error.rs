@@ -25,13 +25,9 @@ pub enum Error {
 
     /// There was a network error when downloading the file (e.g. the host is unreachable, the connection was reset, etc).
     /// Network errors are retryable.
-    #[error("Network error during {during} for {uri}: {cause}")]
+    #[error("Network error for {uri}: {cause}")]
     #[non_exhaustive]
-    Network {
-        during: &'static str,
-        uri: String,
-        cause: String,
-    },
+    Network { uri: String, cause: String },
 
     /// When attempting to download the file, the client was redirected too many times,
     /// was redirected in a loop, or was redirected to an invalid URL.
@@ -82,6 +78,18 @@ impl Error {
             | Error::Write { .. }
             | Error::BadRedirect { .. }
             | Error::Cancelled => false,
+        }
+    }
+
+    /// Return a copy of this error with the URL elided.
+    pub fn without_uri(self) -> Self {
+        if let Self::Network { cause, .. } = self {
+            Self::Network {
+                uri: "unknown".to_string(),
+                cause,
+            }
+        } else {
+            self
         }
     }
 }
