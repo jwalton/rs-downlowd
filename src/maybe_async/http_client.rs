@@ -1,12 +1,27 @@
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode, Uri};
 
-use crate::{head::Head, Error};
+use crate::{Error, head::Head};
 
 pub trait Client {
     type Response: Response;
 
-    async fn head(&self, uri: &Uri, headers: &HeaderMap) -> Head;
+    async fn head(&self, uri: &Uri, headers: &HeaderMap) -> Head {
+        // TODO: Retry the HEAD request if it fails with a retryable error.
+        let (updated_uri, head) = self.request(Method::HEAD, uri, headers.clone()).await;
+
+        if let Ok(response) = head {
+            Head::create_inner(
+                response.status(),
+                response.headers(),
+                uri,
+                updated_uri,
+            )
+            .unwrap_or_default()
+        } else {
+            Head::default()
+        }
+    }
 
     async fn request(
         &self,

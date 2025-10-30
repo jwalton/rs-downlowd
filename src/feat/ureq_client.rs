@@ -4,7 +4,7 @@ use ::http::{HeaderMap, Method, Uri};
 use bytes::Bytes;
 use ureq::{Agent, ResponseExt};
 
-use crate::{Error, head::Head, maybe_async};
+use crate::{Error, maybe_async};
 
 const BUFFER_SIZE: usize = 128 * 1024;
 
@@ -51,23 +51,6 @@ impl UreqClient {
 
 impl maybe_async::Client for UreqClient {
     type Response = Response;
-
-    async fn head(&self, uri: &Uri, headers: &HeaderMap) -> Head {
-        // TODO: Retry the HEAD request if it fails with a retryable error.
-        let (updated_uri, head) = self.request(Method::HEAD, uri, headers.clone()).await;
-
-        if let Ok(response) = head {
-            Head::create_inner(
-                response.inner.status(),
-                response.inner.headers(),
-                uri,
-                updated_uri,
-            )
-            .unwrap_or_default()
-        } else {
-            Head::default()
-        }
-    }
 
     async fn request(
         &self,
