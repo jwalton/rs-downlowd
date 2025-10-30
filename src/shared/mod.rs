@@ -1,6 +1,7 @@
-mod download_config;
 mod download;
+mod download_config;
+mod head;
 
-pub use download_config::DownloadConfig;
 pub use download::DownloadInner;
-pub use download::get_remote_file_name;
+pub use download_config::DownloadConfig;
+pub use head::LazyHead;

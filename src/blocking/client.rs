@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use crate::{
     IntoUri,
-    blocking::{BlockingClientBuilder, download::Download},
-    feat::{blocking_token_bucket::BlockingTokenBucket, ureq_client::UreqClient},
+    blocking::{
+        BlockingClientBuilder,
+        download::Download,
+        imp::{blocking_token_bucket::BlockingTokenBucket, ureq_client::UreqClient},
+    },
     shared::DownloadConfig,
 };
 

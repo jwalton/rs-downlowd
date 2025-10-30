@@ -7,10 +7,9 @@ use crate::{
     RetryHandle, RetryHandler,
     destination::Destination,
     file_info::FileInfo,
-    head::Head,
     headers,
     maybe_async::{Client, File, Limiter, Response, System},
-    shared::DownloadConfig,
+    shared::{DownloadConfig, LazyHead},
 };
 
 pub struct DownloadInner<C, F, L> {
@@ -29,7 +28,7 @@ pub struct DownloadInner<C, F, L> {
     /// File we're writing to.
     part_file: F,
     /// Information about the remote file, if we need to retrieve it.
-    head: Option<Head>,
+    head: LazyHead,
     /// Progress handle keeps track of information about the download, and is
     /// send to the progress callback.
     progress: ProgressHandle,
@@ -46,7 +45,7 @@ where
         limiter: Arc<L>,
         config: DownloadConfig,
         destination: PathBuf,
-        mut head: Option<Head>,
+        mut head: LazyHead,
     ) -> Result<Self, Error> {
         let destination = Self::resolve_destination(
             &mut head,
@@ -74,7 +73,7 @@ where
         // and pass to the progress handler throughout the download.
         let progress = ProgressHandle::new(
             config.uri,
-            head.as_ref().and_then(|h| h.updated_uri.clone()),
+            head.try_get().and_then(|h| h.updated_uri.clone()),
             destination,
             local_file_info,
             file_length,
@@ -95,7 +94,7 @@ where
 
     /// Returns the final destination path for the download.
     async fn resolve_destination(
-        head: &mut Option<Head>,
+        head: &mut LazyHead,
         client: &C,
         uri: &Uri,
         headers: &HeaderMap,
@@ -107,7 +106,7 @@ where
             .map(|m| m.is_dir())
             .unwrap_or_default();
         if is_dir {
-            let filename = get_remote_file_name(head, client, uri, headers).await;
+            let filename = head.get(client, uri, headers).await.get_remote_file_name();
             destination = destination.join(filename);
         };
 
@@ -151,7 +150,13 @@ where
                             let delay = if matches!(e, Error::FileChanged { .. }) {
                                 // The file has changed on the server - we need to start again.
                                 self.part_file.truncate().await?;
-                                self.progress.reset::<F>().await;
+                                self.progress.bytes = 0;
+                                // Reset the local file info. It'll get filled in again
+                                // at the start of the next download attempt.
+                                self.progress
+                                    .local_file_info
+                                    .reset::<F>(&self.progress.destination.sidecar_file)
+                                    .await;
                                 Duration::from_secs(0)
                             } else {
                                 crate::exponential_backoff(
@@ -204,13 +209,11 @@ where
         if let Some(local_length) = local_length {
             let remote_length = match self.progress.remote_length() {
                 Some(remote_length) => Some(remote_length),
-                None => {
-                    if self.head.is_none() {
-                        let head = self.client.head(self.progress.uri(), &self.headers).await;
-                        self.head = Some(head);
-                    }
-                    self.head.as_ref().unwrap().get_remote_file_length()
-                }
+                None => self
+                    .head
+                    .get(&self.client, self.progress.uri(), &self.headers)
+                    .await
+                    .get_remote_file_length(),
             };
 
             if remote_length == Some(local_length) {
@@ -343,18 +346,4 @@ where
 
         Ok(bytes_downloaded)
     }
-}
-
-pub async fn get_remote_file_name<'a, C: Client>(
-    head: &'a mut Option<Head>,
-    client: &C,
-    uri: &Uri,
-    headers: &HeaderMap,
-) -> &'a str {
-    if head.is_none() {
-        let h = client.head(uri, headers).await;
-        head.replace(h);
-    }
-
-    head.as_ref().unwrap().get_remote_file_name()
 }

@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use crate::{
     ClientBuilder, Error, IntoUri,
-    feat::{reqwest_client::ReqwestClient, tokio_token_bucket::TokioTokenBucket},
-    nonblocking::download::Download,
+    nonblocking::{
+        download::Download,
+        imp::{reqwest_client::ReqwestClient, tokio_token_bucket::TokioTokenBucket},
+    },
     shared::DownloadConfig,
 };
 

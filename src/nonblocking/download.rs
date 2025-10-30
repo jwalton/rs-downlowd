@@ -2,12 +2,11 @@ use std::sync::Arc;
 
 use crate::{
     DownloadResult, Error, RetryHandle, config_proxy,
-    feat::{
+    nonblocking::imp::{
         reqwest_client::ReqwestClient, tokio_file::TokioFile, tokio_system::TokioSystem,
         tokio_token_bucket::TokioTokenBucket,
     },
-    head::Head,
-    shared::{self, DownloadConfig, DownloadInner},
+    shared::{DownloadConfig, DownloadInner, LazyHead},
 };
 
 /// Represents a file about to be downloaded.
@@ -19,7 +18,7 @@ pub struct Download {
     /// How do we want to download this file?
     config: DownloadConfig,
     /// Information about the remote file, if we need to retrieve it.
-    head: Option<Head>,
+    head: LazyHead,
 }
 
 impl Download {
@@ -33,7 +32,7 @@ impl Download {
             client,
             limiter,
             config,
-            head: None,
+            head: LazyHead::default(),
         }
     }
 
@@ -97,13 +96,12 @@ impl Download {
     /// at the `Content-Disposition` header, if present, or falling back to the
     /// last part of the URL path.
     pub async fn get_remote_file_name(&mut self) -> &str {
-        shared::get_remote_file_name(
-            &mut self.head,
-            &self.client,
-            &self.config.uri,
-            &self.config.headers,
-        )
-        .await
+        // FIXME: If someone calls this, and then changes the headers or other parameters of this call,
+        // if might change the result of the `HEAD` request, which might invalidate our LazyHead.
+        self.head
+            .get(&self.client, &self.config.uri, &self.config.headers)
+            .await
+            .get_remote_file_name()
     }
 
     /// Send the download request to the server.

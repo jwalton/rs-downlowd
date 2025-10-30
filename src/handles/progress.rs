@@ -2,7 +2,6 @@ use std::path::Path;
 
 use http::Uri;
 
-use crate::maybe_async;
 use crate::{Error, destination::Destination, file_info::FileInfo};
 
 pub struct ProgressHandle {
@@ -69,16 +68,6 @@ impl ProgressHandle {
             local_file_info,
             cancelled: false,
         }
-    }
-
-    /// Reset progress and local_file_info before restarting a download.
-    pub(crate) async fn reset<F: maybe_async::File>(&mut self) {
-        self.bytes = 0;
-        // Reset the local file info. It'll get filled in again
-        // at the start of the next download attempt.
-        self.local_file_info
-            .reset::<F>(&self.destination.sidecar_file)
-            .await;
     }
 
     /// Returns true if we have the entire file already downloaded.

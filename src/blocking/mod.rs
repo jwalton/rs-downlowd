@@ -1,6 +1,7 @@
 mod client;
 mod client_builder;
 mod download;
+pub(crate) mod imp;
 
 pub use client::Client;
 pub use client_builder::BlockingClientBuilder;

@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use crate::{
-    DownloadResult, Error, RetryHandle, config_proxy,
-    feat::{
+    DownloadResult, Error, RetryHandle,
+    blocking::imp::{
         blocking_token_bucket::BlockingTokenBucket, std_file::StdFile, std_system::StdSystem,
         ureq_client::UreqClient,
     },
-    head::Head,
-    shared::{self, DownloadConfig, DownloadInner},
+    config_proxy,
+    shared::{DownloadConfig, DownloadInner, LazyHead},
 };
 
 /// Represents a file about to be downloaded.
@@ -19,7 +19,7 @@ pub struct Download {
     /// How do we want to download this file?
     config: DownloadConfig,
     /// Information about the remote file, if we need to retrieve it.
-    head: Option<Head>,
+    head: LazyHead,
 }
 
 impl Download {
@@ -33,7 +33,7 @@ impl Download {
             client,
             limiter,
             config,
-            head: None,
+            head: LazyHead::default(),
         }
     }
 
@@ -95,13 +95,12 @@ impl Download {
     /// at the `Content-Disposition` header, if present, or falling back to the
     /// last part of the URL path.
     pub fn get_remote_file_name(&mut self) -> &str {
-        sync_executor::block_on(shared::get_remote_file_name(
-            &mut self.head,
-            &self.client,
-            &self.config.uri,
-            &self.config.headers,
-        ))
+        sync_executor::block_on(
+            self.head
+                .get(&self.client, &self.config.uri, &self.config.headers),
+        )
         .unwrap()
+        .get_remote_file_name()
     }
 
     /// Send the download request to the server.

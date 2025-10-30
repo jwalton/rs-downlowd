@@ -1,8 +1,12 @@
 use std::borrow::Cow;
 
-use http::{HeaderMap, StatusCode, Uri};
+use http::{HeaderMap, Method, StatusCode, Uri};
 
-use crate::{Error, file_info::FileInfo};
+use crate::{
+    Error,
+    file_info::FileInfo,
+    maybe_async::{Client, Response},
+};
 
 /// Information about a URL fetched with a HEAD request.
 #[derive(Debug, Default)]
@@ -12,8 +16,26 @@ pub struct Head {
     pub filename: Option<String>,
 }
 
+/// Lazily-initialized information about a URL fetched with a HEAD request.
+#[derive(Default)]
+pub struct LazyHead {
+    head: Option<Head>,
+}
+
 impl Head {
-    pub(crate) fn create_inner(
+    pub async fn create<C: Client>(client: &C, uri: &Uri, headers: &HeaderMap) -> Head {
+        // TODO: Retry the HEAD request if it fails with a retryable error.
+        let (updated_uri, head) = client.request(Method::HEAD, uri, headers.clone()).await;
+
+        if let Ok(response) = head {
+            Head::create_inner(response.status(), response.headers(), uri, updated_uri)
+                .unwrap_or_default()
+        } else {
+            Head::default()
+        }
+    }
+
+    fn create_inner(
         status: StatusCode,
         headers: &HeaderMap,
         uri: &Uri,
@@ -59,6 +81,22 @@ impl Head {
         self.remote_file_info
             .as_ref()
             .and_then(|info| info.file_length)
+    }
+}
+
+impl LazyHead {
+    /// Get the Head object for the given URL.
+    pub async fn get<C: Client>(&mut self, client: &C, uri: &Uri, headers: &HeaderMap) -> &Head {
+        if self.head.is_none() {
+            let h = Head::create(client, uri, headers).await;
+            self.head.replace(h);
+        }
+
+        self.head.as_ref().unwrap()
+    }
+
+    pub fn try_get(&self) -> Option<&Head> {
+        self.head.as_ref()
     }
 }
 
