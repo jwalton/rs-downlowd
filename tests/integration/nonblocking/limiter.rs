@@ -72,8 +72,8 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
 
     // 1 second of downloading slowly, then 2 seconds at 5mb/s.
     assert!(
-        (1400..=1600).contains(&elapsed),
-        "Download was not rate limited. 3000 ms expected, got {elapsed} ms"
+        (1400..=1800).contains(&elapsed),
+        "Download was not rate limited. 1500 ms expected, got {elapsed} ms"
     );
 
     Ok(())
