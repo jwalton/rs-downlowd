@@ -123,7 +123,6 @@ impl DownloadConfig {
     }
 }
 
-#[macro_export]
 macro_rules! config_proxy {
     ( ) => {
         /// Set the user agent for this download.
@@ -201,3 +200,5 @@ macro_rules! config_proxy {
         }
     };
 }
+
+pub(crate) use config_proxy;

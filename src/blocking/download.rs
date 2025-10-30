@@ -6,8 +6,7 @@ use crate::{
         blocking_token_bucket::BlockingTokenBucket, std_file::StdFile, std_system::StdSystem,
         ureq_client::UreqClient,
     },
-    config_proxy,
-    shared::{DownloadConfig, DownloadInner, LazyHead},
+    shared::{DownloadConfig, DownloadInner, LazyHead, config_proxy},
 };
 
 /// Represents a file about to be downloaded.

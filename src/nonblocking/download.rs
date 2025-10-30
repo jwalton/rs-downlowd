@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use crate::{
-    DownloadResult, Error, RetryHandle, config_proxy,
+    DownloadResult, Error, RetryHandle,
     nonblocking::imp::{
         reqwest_client::ReqwestClient, tokio_file::TokioFile, tokio_system::TokioSystem,
         tokio_token_bucket::TokioTokenBucket,
     },
-    shared::{DownloadConfig, DownloadInner, LazyHead},
+    shared::{DownloadConfig, DownloadInner, LazyHead, config_proxy},
 };
 
 /// Represents a file about to be downloaded.

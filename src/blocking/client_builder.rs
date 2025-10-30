@@ -81,3 +81,9 @@ impl BlockingClientBuilder {
         self.builder.blocking()
     }
 }
+
+impl From<ClientBuilder> for BlockingClientBuilder {
+    fn from(builder: ClientBuilder) -> Self {
+        Self { builder }
+    }
+}

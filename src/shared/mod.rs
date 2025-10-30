@@ -2,6 +2,6 @@ mod download;
 mod download_config;
 mod head;
 
-pub use download::DownloadInner;
-pub use download_config::DownloadConfig;
-pub use head::LazyHead;
+pub(crate) use download::DownloadInner;
+pub(crate) use download_config::{DownloadConfig, config_proxy};
+pub(crate) use head::LazyHead;
