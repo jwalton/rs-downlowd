@@ -69,7 +69,7 @@ impl Client {
         ClientBuilder::new()
     }
 
-    /// Create a file download.
+    /// Used to download a file.
     ///
     /// # Examples
     ///

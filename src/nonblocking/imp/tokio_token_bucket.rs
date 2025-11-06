@@ -88,7 +88,7 @@ mod tests {
         limiter.bytes_consumed(50).await;
         limiter.wait().await;
         let elapsed = start.elapsed();
-        assert!(elapsed.as_millis() < 100, "Elapsed time was {elapsed:?}");
+        assert!(elapsed.as_millis() < 10, "Elapsed time was {elapsed:?}");
     }
 
     #[tokio::test]

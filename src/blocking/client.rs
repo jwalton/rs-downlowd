@@ -46,7 +46,7 @@ impl Client {
         BlockingClientBuilder::default()
     }
 
-    /// Create a file download.
+    /// Used to download a file.
     ///
     /// # Examples
     ///
