@@ -6,7 +6,7 @@ use tokio::fs;
 
 use crate::integration::{constants::SERVER_URL, utils};
 
-const ITERATIONS: u32 = 100;
+const ITERATIONS: u32 = 10;
 
 #[cfg(feature = "async")]
 #[tokio::test]

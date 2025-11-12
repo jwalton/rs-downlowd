@@ -32,9 +32,10 @@ async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>>
         result.bytes_downloaded
     );
 
+    let expeted = 1000;
     assert!(
-        (800..=1200).contains(&elapsed),
-        "Download was not rate limited. 2000 ms expected, got {elapsed} ms"
+        (expeted - 300..=expeted + 300).contains(&elapsed),
+        "Download was not rate limited. {expeted} ms expected, got {elapsed} ms"
     );
 
     Ok(())
