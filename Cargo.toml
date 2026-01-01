@@ -36,3 +36,6 @@ blocking = ["dep:ureq"]
 
 [[example]]
 name = "dl"
+
+[package.metadata.docs.rs]
+all-features = true
