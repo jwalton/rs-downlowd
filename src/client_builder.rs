@@ -17,6 +17,8 @@ pub struct ClientBuilder {
     pub(crate) default_max_retries: Option<u64>,
     pub(crate) max_bytes_per_second: Option<u64>,
     pub(crate) err: Option<Error>,
+    #[cfg(feature = "async")]
+    pub(crate) reqwest_client: Option<reqwest::Client>,
 }
 
 impl ClientBuilder {
@@ -27,6 +29,8 @@ impl ClientBuilder {
             default_max_retries: DEFAULT_MAX_RETRIES,
             max_bytes_per_second: None,
             err: None,
+            #[cfg(feature = "async")]
+            reqwest_client: None,
         }
     }
 
@@ -83,6 +87,16 @@ impl ClientBuilder {
         } else {
             self.max_bytes_per_second = max;
         }
+        self
+    }
+
+    /// Set the reqwest client instance to use when making nonblocking requests.
+    /// This only applies to nonblocking clients, but will allow you to specify
+    /// a reqwest client with advanced options configured, or allow you to share
+    /// a connection pool across multiple downlowd clients.
+    #[cfg(feature = "async")]
+    pub fn reqwest_client(mut self, reqwest_client: reqwest::Client) -> Self {
+        self.reqwest_client = Some(reqwest_client);
         self
     }
 }

@@ -30,7 +30,7 @@ impl ClientBuilder {
             return Err(e);
         }
 
-        let client = reqwest::Client::new();
+        let client = self.reqwest_client.unwrap_or_default();
 
         Ok(Client::new_inner(
             ReqwestClient::new(client),
