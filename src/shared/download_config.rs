@@ -1,12 +1,18 @@
 use std::path::{Path, PathBuf};
 
-use http::{HeaderMap, HeaderValue, Uri, header::IntoHeaderName};
+use http::{
+    HeaderMap, HeaderValue, Uri,
+    header::{self, IntoHeaderName},
+};
 
 use crate::{
     Error, IntoUri, Progress, ProgressHandle, RetryHandle, RetryHandler,
     file_info::FileInfo,
     handles::default_retry_callback,
-    utils::{self, http::append_header},
+    utils::{
+        self,
+        http::{append_header, insert_header},
+    },
 };
 
 /// Represents configuraton used to download a file.
@@ -33,7 +39,7 @@ pub struct DownloadConfig {
 
 impl DownloadConfig {
     /// Create a new download for the given URL.
-    pub(crate) fn new(url: impl IntoUri) -> Self {
+    pub(crate) fn new(url: impl IntoUri, headers: &HeaderMap) -> Self {
         let (url, err) = match url.into_uri() {
             Ok(u) => (u, None),
             Err(e) => (Uri::from_static("http://invalid/"), Some(e)),
@@ -41,7 +47,7 @@ impl DownloadConfig {
 
         DownloadConfig {
             uri: url,
-            headers: HeaderMap::new(),
+            headers: headers.clone(),
             destination: None,
             max_retries: None,
             progress_handler: None,
@@ -52,8 +58,14 @@ impl DownloadConfig {
     }
 
     /// Set the user agent for this download.
-    pub fn user_agent(&mut self, user_agent: impl Into<String>) {
-        self.header(http::header::USER_AGENT, user_agent.into())
+    pub fn user_agent<V>(&mut self, user_agent: V)
+    where
+        HeaderValue: TryFrom<V>,
+        <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+    {
+        if let Err(e) = insert_header(&mut self.headers, header::USER_AGENT, user_agent) {
+            self.err = Some(e);
+        }
     }
 
     /// Add a header to this download.
@@ -126,7 +138,11 @@ impl DownloadConfig {
 macro_rules! config_proxy {
     ( ) => {
         /// Set the user agent for this download.
-        pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        pub fn user_agent<V>(mut self, user_agent: V) -> Self
+        where
+            http::HeaderValue: TryFrom<V>,
+            <http::HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+        {
             self.config.user_agent(user_agent);
             self
         }

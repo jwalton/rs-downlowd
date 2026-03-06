@@ -2,6 +2,27 @@ use http::{HeaderMap, HeaderName, HeaderValue, header::IntoHeaderName};
 
 use crate::Error;
 
+/// Insert a header into the header map, replacing any existing headers of the same name.
+pub fn insert_header<K, V>(headers: &mut HeaderMap, key: K, value: V) -> Result<(), Error>
+where
+    K: IntoHeaderName,
+    HeaderValue: TryFrom<V>,
+    <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+{
+    match value.try_into() {
+        Ok(v) => {
+            headers.insert(key, v);
+        }
+        Err(e) => {
+            return Err(Error::InvalidHeader {
+                cause: e.into().to_string(),
+            });
+        }
+    };
+
+    Ok(())
+}
+
 /// Append a header to a `HeaderMap`.
 pub fn append_header<K, V>(headers: &mut HeaderMap, key: K, value: V) -> Result<(), Error>
 where
@@ -39,6 +60,14 @@ mod tests {
     use http::HeaderValue;
 
     use super::*;
+
+    #[test]
+    fn should_insert_headers() {
+        let mut headers = HeaderMap::new();
+        insert_header(&mut headers, "a", "a").unwrap();
+        insert_header(&mut headers, "a", "b").unwrap();
+        assert_eq!(headers.get("a").unwrap(), "b");
+    }
 
     #[test]
     fn should_append_headers() {
