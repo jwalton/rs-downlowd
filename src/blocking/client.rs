@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use http::HeaderMap;
+
 use crate::{
     IntoUri,
     blocking::{
@@ -17,6 +19,7 @@ use crate::{
 #[derive(Clone)]
 pub struct Client {
     client: UreqClient,
+    headers: HeaderMap,
     default_max_retries: Option<u64>,
     limiter: Arc<BlockingTokenBucket>,
 }
@@ -29,6 +32,7 @@ impl Client {
 
     pub(crate) fn new_inner(
         agent: ureq::Agent,
+        headers: HeaderMap,
         default_max_retries: Option<u64>,
         max_bytes_per_second: Option<u64>,
     ) -> Self {
@@ -36,6 +40,7 @@ impl Client {
 
         Self {
             client: UreqClient::new(agent),
+            headers,
             default_max_retries,
             limiter,
         }
@@ -61,7 +66,7 @@ impl Client {
     /// ```
     ///
     pub fn get(&self, uri: impl IntoUri) -> Download {
-        let mut config = DownloadConfig::new(uri);
+        let mut config = DownloadConfig::new(uri, &self.headers);
         config.max_retries(self.default_max_retries);
 
         Download::new(self.client.clone(), self.limiter.clone(), config)

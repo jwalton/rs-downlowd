@@ -1,6 +1,6 @@
 use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
 
-use crate::{client_builder::ClientBuilder, Error, blocking::Client};
+use crate::{Error, blocking::Client, client_builder::ClientBuilder};
 
 /// Builder for blocking clients.
 #[derive(Default)]
@@ -15,14 +15,13 @@ impl ClientBuilder {
             return Err(e);
         }
 
-        let mut config = ureq::Agent::config_builder().http_status_as_error(false);
-        if let Some(user_agent) = &self.user_agent {
-            config = config.user_agent(user_agent);
-        }
-        let config = config.build();
+        let config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build();
 
         Ok(Client::new_inner(
             config.into(),
+            self.headers,
             self.default_max_retries,
             self.max_bytes_per_second,
         ))
@@ -38,7 +37,11 @@ impl BlockingClientBuilder {
     }
 
     /// Set the user agent for the client.
-    pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
+    pub fn user_agent<V>(mut self, user_agent: V) -> Self
+    where
+        HeaderValue: TryFrom<V>,
+        <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+    {
         self.builder = self.builder.user_agent(user_agent);
         self
     }

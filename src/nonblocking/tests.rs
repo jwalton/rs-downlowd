@@ -28,11 +28,7 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let url = server.url("/file.txt");
     let destination = dir.path().join("my-file.txt");
-    let result = client
-        .get(url)
-        .destination(destination)
-        .send()
-        .await?;
+    let result = client.get(url).destination(destination).send().await?;
 
     assert_eq!(result.bytes_downloaded, 11);
 
@@ -53,7 +49,7 @@ async fn should_set_the_user_agent_in_client() -> Result<(), Box<dyn std::error:
             request::method_path("GET", "/file.txt"),
             request::headers(contains(("user-agent", "test1"))),
         ])
-            .respond_with(responders::status_code(200).body(message)),
+        .respond_with(responders::status_code(200).body(message)),
     );
 
     let client = Client::builder().user_agent("test1").build()?;
@@ -68,7 +64,8 @@ async fn should_set_the_user_agent_in_client() -> Result<(), Box<dyn std::error:
 }
 
 #[tokio::test]
-async fn should_set_the_user_agent_for_a_single_download() -> Result<(), Box<dyn std::error::Error>> {
+async fn should_set_the_user_agent_for_a_single_download() -> Result<(), Box<dyn std::error::Error>>
+{
     let message = "hello world";
     let dir = TempDir::new()?;
     let server = Server::run();
@@ -78,7 +75,7 @@ async fn should_set_the_user_agent_for_a_single_download() -> Result<(), Box<dyn
             request::method_path("GET", "/file.txt"),
             request::headers(contains(("user-agent", "test2"))),
         ])
-            .respond_with(responders::status_code(200).body(message)),
+        .respond_with(responders::status_code(200).body(message)),
     );
 
     let client = Client::builder().user_agent("test1").build()?;

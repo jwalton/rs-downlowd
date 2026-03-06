@@ -1,13 +1,18 @@
-use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
+use http::{
+    HeaderMap, HeaderValue,
+    header::{self, IntoHeaderName},
+};
 
 use crate::{
     DEFAULT_MAX_RETRIES, Error,
-    utils::{self, http::append_header},
+    utils::{
+        self,
+        http::{append_header, insert_header},
+    },
 };
 
 /// Builder for creating a `Client` with custom configuration.
 pub struct ClientBuilder {
-    pub(crate) user_agent: Option<String>,
     pub(crate) headers: HeaderMap,
     pub(crate) default_max_retries: Option<u64>,
     pub(crate) max_bytes_per_second: Option<u64>,
@@ -18,7 +23,6 @@ impl ClientBuilder {
     /// Create a new ClientBuilder with the given user agent.
     pub fn new() -> Self {
         ClientBuilder {
-            user_agent: None,
             headers: HeaderMap::new(),
             default_max_retries: DEFAULT_MAX_RETRIES,
             max_bytes_per_second: None,
@@ -27,12 +31,20 @@ impl ClientBuilder {
     }
 
     /// Set the user agent for the client.
-    pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
-        self.user_agent = Some(user_agent.into());
+    pub fn user_agent<V>(mut self, user_agent: V) -> Self
+    where
+        HeaderValue: TryFrom<V>,
+        <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+    {
+        if let Err(e) = insert_header(&mut self.headers, header::USER_AGENT, user_agent) {
+            self.err = Some(e);
+        }
         self
     }
 
-    /// Add a default header for every request.
+    /// Add a default header for every request.  If the key has already been
+    /// added as a header, then the value will be pushed to the end of the list
+    /// of values associated witht his header (like [HeaderMap::append]).
     pub fn header<K, V>(mut self, key: K, value: V) -> Self
     where
         K: IntoHeaderName,

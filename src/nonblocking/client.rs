@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use http::HeaderMap;
+
 use crate::{
     ClientBuilder, Error, IntoUri,
     nonblocking::{
@@ -16,6 +18,7 @@ use crate::{
 #[derive(Clone)]
 pub struct Client {
     client: ReqwestClient,
+    headers: HeaderMap,
     default_max_retries: Option<u64>,
     limiter: Arc<TokioTokenBucket>,
 }
@@ -27,17 +30,11 @@ impl ClientBuilder {
             return Err(e);
         }
 
-        let mut builder = reqwest::Client::builder();
-        if let Some(user_agent) = &self.user_agent {
-            builder = builder.user_agent(user_agent);
-        }
-        let client = builder
-            .default_headers(self.headers)
-            .build()
-            .expect("Failed to create HTTP client");
+        let client = reqwest::Client::new();
 
         Ok(Client::new_inner(
             ReqwestClient::new(client),
+            self.headers,
             self.default_max_retries,
             self.max_bytes_per_second,
         ))
@@ -50,8 +47,9 @@ impl Client {
         ClientBuilder::default().build().unwrap()
     }
 
-    pub(crate) fn new_inner(
+    fn new_inner(
         client: ReqwestClient,
+        headers: HeaderMap,
         default_max_retries: Option<u64>,
         max_bytes_per_second: Option<u64>,
     ) -> Self {
@@ -59,6 +57,7 @@ impl Client {
 
         Self {
             client,
+            headers,
             default_max_retries,
             limiter,
         }
@@ -85,9 +84,8 @@ impl Client {
     /// ```
     ///
     pub fn get(&self, url: impl IntoUri) -> Download {
-        let mut config = DownloadConfig::new(url);
+        let mut config = DownloadConfig::new(url, &self.headers);
         config.max_retries(self.default_max_retries);
-
         Download::new(self.client.clone(), self.limiter.clone(), config)
     }
 
