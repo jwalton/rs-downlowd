@@ -24,7 +24,7 @@ See [the documentation at docs.rs](https://docs.rs/downlowd/latest/downlowd/).
 
 This is the simplest example:
 
-```rust
+```no_run
 # tokio_test::block_on(async {
 use downlowd::Client;
 # use temp_dir::TempDir;
@@ -55,7 +55,7 @@ If there's an error during the download, such as a network error, or the transfe
 
 There are a couple of ways you can hook into downlowd to report on progress. The `on_progress` handler is called once at the start of the download, and then whenever bytes are downloaded.
 
-```rust
+```no_run
 # tokio_test::block_on(async {
 # use downlowd::Client;
 # use temp_dir::TempDir;
@@ -91,7 +91,7 @@ cargo run https://releases.ubuntu.com/24.04.3/ubuntu-24.04.3-desktop-amd64.iso .
 
 You can also use the `on_retry()` method to register a handler that will be run immediately prior to a retry. This can be used to customize the backoff, or cancel the download:
 
-```rust
+```no_run
 # tokio_test::block_on(async {
 # use std::time::Duration;
 # use temp_dir::TempDir;
@@ -128,7 +128,7 @@ Again, you can call `r.cancel()` here to not retry at all, and instead fail the 
 
 You can create a custom client using the `ClientBuilder`:
 
-```rust
+```no_run
 # tokio_test::block_on(async {
 use downlowd::{ClientBuilder, Client};
 # use temp_dir::TempDir;

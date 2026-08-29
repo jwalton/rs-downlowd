@@ -11,11 +11,7 @@ This project is a little unusual in that it uses [sync_executor](https://crates.
 
 ## Running Tests
 
-Integration tests rely on a local copy of nginx running. There's a docker-compose file you can use to easily set this up:
-
 ```sh
-cd ./test-support
-docker-compose up
 cargo test
 cargo test --no-default-features -F blocking -- blocking
 ```

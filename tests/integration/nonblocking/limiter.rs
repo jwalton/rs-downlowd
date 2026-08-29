@@ -3,10 +3,7 @@ use std::time::{Duration, SystemTime};
 use downlowd::Client;
 use temp_dir::TempDir;
 
-use crate::integration::{
-    constants::SERVER_URL,
-    utils::{self, is_ci},
-};
+use crate::integration::utils::{self, web_server::spawn_web_server_async, is_ci};
 
 #[tokio::test]
 async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>> {
@@ -16,7 +13,8 @@ async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>>
 
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
-    let url = format!("{SERVER_URL}{}", utils::big_file_url(file_size));
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}{}", utils::big_file_url(file_size));
 
     let start = SystemTime::now();
 
@@ -51,7 +49,8 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
 
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
-    let url = format!("{SERVER_URL}{}", utils::big_file_url(file_size));
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}{}", utils::big_file_url(file_size));
 
     // Download the file with a rate limit.
     let client = Client::builder()
@@ -93,7 +92,8 @@ async fn should_allow_removing_download_speed_partway_through()
 
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
-    let url = format!("{SERVER_URL}{}", utils::big_file_url(file_size));
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}{}", utils::big_file_url(file_size));
 
     // Download the file with a rate limit.
     let client = Client::builder()

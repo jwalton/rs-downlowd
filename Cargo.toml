@@ -25,6 +25,7 @@ httptest = "0.16.3"
 indicatif = "0.18.0"
 rand = "0.10.2"
 temp-dir = "0.2.0"
+testcontainers = { version = "0.28.0", features = ["blocking"] }
 tokio = { version = "1.47.1", features = ["rt-multi-thread", "time", "net"] }
 tokio-test = "0.4.4"
 ureq = "3.1.2"

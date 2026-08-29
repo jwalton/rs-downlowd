@@ -7,10 +7,7 @@ use std::{
 use downlowd::blocking::Client;
 use temp_dir::TempDir;
 
-use crate::integration::{
-    constants::SERVER_URL,
-    utils::{self, is_ci},
-};
+use crate::integration::utils::{self, web_server::spawn_web_server, is_ci};
 
 pub fn with_timeout<F, T>(timeout: Duration, f: F) -> T
 where
@@ -31,7 +28,8 @@ fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>> {
 
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
-    let url = format!("{SERVER_URL}{}", utils::big_file_url(file_size));
+    let server_url = spawn_web_server();
+    let url = format!("{server_url}{}", utils::big_file_url(file_size));
 
     let start = SystemTime::now();
 
@@ -68,8 +66,8 @@ fn should_change_download_speed_partway_through() -> Result<(), Box<dyn std::err
 
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
-    let url = format!("{SERVER_URL}{}", utils::big_file_url(file_size));
-
+    let server_url = spawn_web_server();
+    let url = format!("{server_url}{}", utils::big_file_url(file_size));
     // Download the file with a rate limit.
     let client = Client::builder()
         .max_bytes_per_second(Some(limit))
@@ -109,8 +107,8 @@ fn should_allow_removing_download_speed_partway_through() -> Result<(), Box<dyn 
 
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
-    let url = format!("{SERVER_URL}{}", utils::big_file_url(file_size));
-
+    let server_url = spawn_web_server();
+    let url = format!("{server_url}{}", utils::big_file_url(file_size));
     // Download the file with a rate limit.
     let client = Client::builder()
         .max_bytes_per_second(Some(limit))

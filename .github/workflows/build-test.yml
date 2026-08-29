@@ -30,6 +30,5 @@ jobs:
           cache-base: master
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
       - run: cargo build
-      - name: Start nginx
-        run: cd test-support && docker compose up -d
+      - run: docker pull nginx:1-alpine
       - run: cargo test

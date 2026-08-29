@@ -1,4 +1,3 @@
-mod constants;
 mod utils;
 
 #[cfg(feature = "blocking")]
