@@ -4,7 +4,10 @@
 //! written using sync code, and then these get wrapped in blocking tasks when
 //! used in async contexts.
 
-use std::path::{Path, PathBuf};
+use std::{
+    io::{Seek, SeekFrom},
+    path::{Path, PathBuf},
+};
 
 use crate::Error;
 
@@ -37,16 +40,25 @@ pub fn open_file_for_writing(part_file: &Path) -> Result<std::fs::File, Error> {
         })?;
     }
 
-    let file = std::fs::OpenOptions::new()
+    // Open file in write mode and then seek to the end of the file (instead
+    // of using append mode) because append mode breaks locking on windows.
+    // See https://github.com/rust-lang/rust/issues/54118.
+    let mut file = std::fs::OpenOptions::new()
         .create(true)
-        .read(true)
-        .append(true)
+        .write(true)
+        .truncate(false)
         .open(part_file)
         .map_err(|e| Error::Write {
             action: "opening file for writing",
             path: part_file.to_path_buf(),
             cause: e,
         })?;
+
+    file.seek(SeekFrom::End(0)).map_err(|e| Error::Write {
+        action: "seeking to end of file",
+        path: part_file.to_path_buf(),
+        cause: e,
+    })?;
 
     // Get an exclusive lock to the file, to make sure no one else is writing to it.
     file.lock().map_err(|e| Error::Write {
