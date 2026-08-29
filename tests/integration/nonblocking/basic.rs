@@ -5,14 +5,14 @@ use http::HeaderMap;
 use temp_dir::TempDir;
 
 use crate::integration::utils::{
-    self, ProgressRecord, ProgressRecorder, containers::spawn_web_server_async, write_sidecar_file,
+    self, ProgressRecord, ProgressRecorder, web_server::spawn_web_server_async, write_sidecar_file,
 };
 
 const MESSAGE: &str = "hello world";
 
 #[tokio::test]
 async fn should_get_the_name_of_the_file() -> Result<(), Box<dyn std::error::Error>> {
-    let (_container, server_url) = spawn_web_server_async().await;
+    let server_url = spawn_web_server_async().await;
     let url = format!("{server_url}/hello.txt");
 
     let mut download = Client::new().get(&url);
@@ -22,7 +22,7 @@ async fn should_get_the_name_of_the_file() -> Result<(), Box<dyn std::error::Err
 
 #[tokio::test]
 async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
-    let (_container, server_url) = spawn_web_server_async().await;
+    let server_url = spawn_web_server_async().await;
     let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path();
@@ -72,7 +72,7 @@ async fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::error::Error>> {
-    let (_container, server_url) = spawn_web_server_async().await;
+    let server_url = spawn_web_server_async().await;
     let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
@@ -111,7 +111,7 @@ async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::err
 
 #[tokio::test]
 async fn should_not_skip_a_file_if_the_size_is_wrong() -> Result<(), Box<dyn std::error::Error>> {
-    let (_container, server_url) = spawn_web_server_async().await;
+    let server_url = spawn_web_server_async().await;
     let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
@@ -129,7 +129,7 @@ async fn should_not_skip_a_file_if_the_size_is_wrong() -> Result<(), Box<dyn std
 
 #[tokio::test]
 async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
-    let (_container, server_url) = spawn_web_server_async().await;
+    let server_url = spawn_web_server_async().await;
     let url = format!("{server_url}/i.do.not.exist");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
@@ -155,7 +155,7 @@ async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>> {
-    let (_container, server_url) = spawn_web_server_async().await;
+    let server_url = spawn_web_server_async().await;
     let url = format!("{server_url}{}", utils::big_file_url(10 * 1024 * 1024));
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
@@ -194,7 +194,7 @@ async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::
 
 #[tokio::test]
 async fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::error::Error>> {
-    let (_container, server_url) = spawn_web_server_async().await;
+    let server_url = spawn_web_server_async().await;
     let url = format!("{server_url}/hello.txt");
 
     let client = Client::builder()

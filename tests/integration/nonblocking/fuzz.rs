@@ -9,7 +9,7 @@ use std::{
 use downlowd::Client;
 use temp_dir::TempDir;
 
-use crate::integration::{constants::SERVER_URL, utils};
+use crate::integration::utils::{self, web_server::spawn_web_server_async};
 
 /// This test case repeatedly creates and cancels a download to ensure that
 /// there are no timing issues or cancel-safety problems.
@@ -18,7 +18,8 @@ async fn should_work_when_cancelled() -> Result<(), Box<dyn std::error::Error>> 
     let file_size = 3 * 1024 * 1024; // 3 MB.
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
-    let url = format!("{SERVER_URL}{}", utils::big_file_url(file_size));
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}{}", utils::big_file_url(file_size));
 
     // Download the file with a rate limit.
     let client = Client::builder()

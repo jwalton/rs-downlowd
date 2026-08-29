@@ -1,15 +1,21 @@
 use std::{
-    collections::HashMap, env, fs, io::Write, path::{Path, PathBuf}, sync::{Mutex, OnceLock},
+    collections::HashMap,
+    env, fs,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
 };
 
 use rand::RngExt;
+
+pub mod web_server;
 
 mod progress_recorder;
 pub use progress_recorder::*;
 
 pub struct HeadData {
     pub last_modified: String,
-    pub etag: String,
+    pub etag: Option<String>,
     pub content_length: u64,
 }
 
@@ -38,8 +44,7 @@ pub fn head_url(url: &str) -> HeadData {
     let etag = response
         .headers()
         .get(http::header::ETAG)
-        .map(|s| s.to_str().expect("valid string").to_owned())
-        .unwrap();
+        .map(|s| s.to_str().expect("valid string").to_owned());
 
     let content_length = response
         .headers()

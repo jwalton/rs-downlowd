@@ -2,16 +2,16 @@ use downlowd::Client;
 use temp_dir::TempDir;
 use tokio::fs;
 
-use crate::integration::{
-    constants::SERVER_URL,
-    utils::{self, write_sidecar_file, ProgressRecord, ProgressRecorder},
+use crate::integration::utils::{
+    self, ProgressRecord, ProgressRecorder, web_server::spawn_web_server_async, write_sidecar_file,
 };
 
 const MESSAGE: &str = "hello world";
 
 #[tokio::test]
 async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
@@ -59,7 +59,8 @@ async fn should_continue_a_file() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
@@ -71,7 +72,7 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
     write_sidecar_file(
         &sidecar_file,
         Some(&head.last_modified),
-        Some(&head.etag),
+        head.etag.as_deref(),
         Some(head.content_length),
     )?;
 
@@ -107,7 +108,8 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
 #[tokio::test]
 async fn should_not_continue_a_file_from_sidecar_if_length_etag_changed()
 -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
@@ -124,11 +126,7 @@ async fn should_not_continue_a_file_from_sidecar_if_length_etag_changed()
     )?;
 
     let client = Client::new();
-    let result = client
-        .get(&url)
-        .destination(&destination)
-        .send()
-        .await?;
+    let result = client.get(&url).destination(&destination).send().await?;
 
     assert_eq!(&result.path, &destination);
 
@@ -148,7 +146,8 @@ async fn should_not_continue_a_file_from_sidecar_if_length_etag_changed()
 #[tokio::test]
 async fn should_not_continue_a_file_from_sidecar_if_length_has_changed()
 -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
@@ -160,16 +159,12 @@ async fn should_not_continue_a_file_from_sidecar_if_length_has_changed()
     write_sidecar_file(
         &sidecar_file,
         Some(&head.last_modified),
-        Some(&head.etag),
+        head.etag.as_deref(),
         Some(5),
     )?;
 
     let client = Client::new();
-    let result = client
-        .get(&url)
-        .destination(&destination)
-        .send()
-        .await?;
+    let result = client.get(&url).destination(&destination).send().await?;
 
     assert_eq!(&result.path, &destination);
 
@@ -186,7 +181,8 @@ async fn should_not_continue_a_file_from_sidecar_if_length_has_changed()
 #[tokio::test]
 async fn should_continue_a_file_from_sidecar_that_is_already_complete_and_renamed()
 -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
@@ -197,7 +193,7 @@ async fn should_continue_a_file_from_sidecar_that_is_already_complete_and_rename
     write_sidecar_file(
         &sidecar_file,
         Some(&head.last_modified),
-        Some(&head.etag),
+        head.etag.as_deref(),
         Some(head.content_length),
     )?;
 
@@ -226,7 +222,8 @@ async fn should_continue_a_file_from_sidecar_that_is_already_complete_and_rename
 #[tokio::test]
 async fn should_not_continue_a_file_with_wrong_last_modified()
 -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
@@ -253,7 +250,8 @@ async fn should_not_continue_a_file_with_wrong_last_modified()
 #[tokio::test]
 async fn should_redownload_if_etag_is_same_but_last_modified_has_changed()
 -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
     let head = utils::head_url(&url);
@@ -266,7 +264,7 @@ async fn should_redownload_if_etag_is_same_but_last_modified_has_changed()
     let result = client
         .get(&url)
         .destination(&destination)
-        .etag(head.etag)
+        .etag(head.etag.unwrap())
         .last_modified("wrong")
         .send()
         .await?;
@@ -282,7 +280,8 @@ async fn should_redownload_if_etag_is_same_but_last_modified_has_changed()
 
 #[tokio::test]
 async fn should_prefer_user_etag_over_sidecar_file() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let server_url = spawn_web_server_async().await;
+    let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
@@ -304,7 +303,7 @@ async fn should_prefer_user_etag_over_sidecar_file() -> Result<(), Box<dyn std::
         .destination(&destination)
         // We're providing the correct etag, maybe from a database.  This should
         // override whatever the sidecar file says.
-        .etag(head.etag)
+        .etag(head.etag.unwrap())
         .send()
         .await?;
 
