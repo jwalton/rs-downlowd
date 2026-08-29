@@ -2,7 +2,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use tokio::select;
 
-use crate::{limiter::{TokenBucket, UNLIMITED}, maybe_async};
+use crate::{
+    limiter::{TokenBucket, UNLIMITED},
+    maybe_async,
+};
 
 pub struct TokioTokenBucket {
     ever_enabled: AtomicBool,
@@ -26,7 +29,8 @@ impl TokioTokenBucket {
 
     /// Update the maximum bytes per second that can be downloaded.
     pub fn set_max_bytes_per_second(&self, max_bps: Option<u64>) {
-        self.ever_enabled.fetch_or(max_bps.is_some(),  Ordering::Relaxed);
+        self.ever_enabled
+            .fetch_or(max_bps.is_some(), Ordering::Relaxed);
         self.max_bytes_per_second
             .store(max_bps.unwrap_or(0), Ordering::Relaxed);
 
@@ -72,12 +76,35 @@ impl maybe_async::Limiter for TokioTokenBucket {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{sync::Arc, time::Duration};
 
     use super::*;
+
+    #[tokio::test]
+    async fn should_wake_up_when_limit_increased() {
+        // Consume enough bytes that, at this (very slow) rate, we'd need to
+        // wait about 100 seconds to drain the bucket.
+        let limiter = Arc::new(TokioTokenBucket::new(Some(10)));
+        limiter.bytes_consumed(1000).await;
+
+        let waiter = {
+            let limiter = limiter.clone();
+            tokio::spawn(async move { limiter.wait().await })
+        };
+
+        // Give the waiter task a chance to start its (long) sleep.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        // Raising the limit should wake the waiter immediately.
+        limiter.set_max_bytes_per_second(Some(1_000_000_000));
+
+        tokio::time::timeout(Duration::from_secs(1), waiter)
+            .await
+            .expect("wait() did not wake up after the limit was increased")
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn should_not_wait_if_consuming_slow_enough() {

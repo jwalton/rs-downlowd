@@ -87,9 +87,36 @@ impl Limiter for BlockingTokenBucket {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{sync::Arc, thread, time::{Duration, Instant}};
 
     use super::*;
+
+    #[test]
+    fn should_wake_up_when_limit_increased() {
+        // Consume enough bytes that, at this (very slow) rate, we'd need to
+        // wait about 100 seconds to drain the bucket.
+        let limiter = Arc::new(BlockingTokenBucket::new(Some(1_000_000)));
+        limiter.bytes_consumed(1000);
+
+        let waiter = {
+            let limiter = limiter.clone();
+            thread::spawn(move || {
+                limiter.wait();
+            })
+        };
+
+        // Give the waiter task a chance to start its (long) sleep.
+        thread::sleep(Duration::from_millis(20));
+
+        // Raising the limit should wake the waiter immediately.
+        limiter.set_max_bytes_per_second(Some(1_000_000_000));
+
+        let start = Instant::now();
+        let _ = waiter.join();
+        let elapsed = start.elapsed();
+
+        assert!(elapsed < Duration::from_millis(500), "Waiter took a long time to wake.")
+    }
 
     #[test]
     fn should_not_wait_if_consuming_slow_enough() {

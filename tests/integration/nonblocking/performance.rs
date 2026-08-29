@@ -4,19 +4,15 @@ use downlowd::Client;
 use temp_dir::TempDir;
 use tokio::fs;
 
-use crate::integration::{constants::SERVER_URL, utils};
+use crate::integration::{constants::SERVER_URL, utils::{self, is_ci}};
 
 const ITERATIONS: u32 = 10;
 
-#[cfg(feature = "async")]
 #[tokio::test]
 async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
-    use std::env;
-
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
     let url = format!("{SERVER_URL}{}", utils::big_file_url(10 * 1024 * 1024));
-    let is_ci = env::var("CI").is_ok();
 
     // This is the "naive" approach where we download the whole file into memory
     // using reqwest, then write it to disk.
@@ -48,7 +44,7 @@ async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
 
     // This should be quite low, but on github actions, we're in a VM and performance
     // measurements can vary wildly.
-    let target = if is_ci { 2.0 } else { 1.1 };
+    let target = if is_ci() { 2.0 } else { 1.1 };
     assert!(ratio < target, "Download was too slow");
 
     Ok(())

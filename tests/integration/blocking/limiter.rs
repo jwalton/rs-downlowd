@@ -7,7 +7,10 @@ use std::{
 use downlowd::blocking::Client;
 use temp_dir::TempDir;
 
-use crate::integration::{constants::SERVER_URL, utils};
+use crate::integration::{
+    constants::SERVER_URL,
+    utils::{self, is_ci},
+};
 
 pub fn with_timeout<F, T>(timeout: Duration, f: F) -> T
 where
@@ -87,9 +90,11 @@ fn should_change_download_speed_partway_through() -> Result<(), Box<dyn std::err
 
     println!("Downloaded took {elapsed} ms",);
 
-    // 1 second of downloading slowly, then 2 seconds at 5mb/s.
+    // 1 second of downloading slowly, then 2 seconds at 5mb/s.  Wall clock tests
+    // like this can vary wildly on CI runners, so...
+    let target_max = if is_ci() { 5000 } else { 1800 };
     assert!(
-        (1400..=1800).contains(&elapsed),
+        (1400..=target_max).contains(&elapsed),
         "Download was not rate limited. 1500 ms expected, got {elapsed} ms"
     );
 

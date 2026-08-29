@@ -1,9 +1,5 @@
 use std::{
-    collections::HashMap,
-    fs,
-    io::Write,
-    path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    collections::HashMap, env, fs, io::Write, path::{Path, PathBuf}, sync::{Mutex, OnceLock},
 };
 
 use rand::RngExt;
@@ -21,6 +17,11 @@ pub struct HeadData {
 pub struct BigFile {
     pub path: PathBuf,
     pub url: String,
+}
+
+/// Returns true if we're running on the CI server.
+pub fn is_ci() -> bool {
+    env::var("CI").is_ok()
 }
 
 pub fn head_url(url: &str) -> HeadData {
