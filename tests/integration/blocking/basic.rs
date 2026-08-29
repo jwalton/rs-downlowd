@@ -4,16 +4,16 @@ use downlowd::blocking::Client;
 use http::HeaderMap;
 use temp_dir::TempDir;
 
-use crate::integration::{
-    constants::SERVER_URL,
-    utils::{self, ProgressRecord, ProgressRecorder},
+use crate::integration::utils::{
+    self, ProgressRecord, ProgressRecorder, containers::spawn_web_server,
 };
 
 const MESSAGE: &str = "hello world";
 
 #[test]
 fn should_get_the_name_of_the_file() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let (_guard, server_url) = spawn_web_server();
+    let url = format!("{server_url}/hello.txt");
 
     let mut download = Client::new().get(&url);
     assert_eq!(download.get_remote_file_name(), "hello.txt");
@@ -22,7 +22,8 @@ fn should_get_the_name_of_the_file() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let (_guard, server_url) = spawn_web_server();
+    let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path();
 
@@ -37,7 +38,7 @@ fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
             .get(&url)
             .destination(destination)
             .on_progress(move |p| {
-                assert_eq!(p.etag().unwrap(), head.etag);
+                assert_eq!(p.etag(), head.etag.as_deref());
                 assert_eq!(p.last_modified().unwrap(), head.last_modified);
                 assert_eq!(p.remote_length().unwrap(), head.content_length);
 
@@ -70,7 +71,8 @@ fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let (_guard, server_url) = spawn_web_server();
+    let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
@@ -99,7 +101,8 @@ fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::error::Er
 
 #[test]
 fn should_not_skip_a_file_if_the_size_is_wrong() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let (_guard, server_url) = spawn_web_server();
+    let url = format!("{server_url}/hello.txt");
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
@@ -116,7 +119,9 @@ fn should_not_skip_a_file_if_the_size_is_wrong() -> Result<(), Box<dyn std::erro
 
 #[test]
 fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/i.do.not.exist");
+    let (_guard, server_url) = spawn_web_server();
+    let url = format!("{server_url}/i.do.not.exist");
+
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.txt");
 
@@ -140,7 +145,8 @@ fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}{}", utils::big_file_url(10 * 1024 * 1024));
+    let (_guard, server_url) = spawn_web_server();
+    let url = format!("{server_url}/{}", utils::big_file_url(10 * 1024 * 1024));
     let dir = TempDir::new()?;
     let destination = dir.path().join("my-file.bin");
     let part_file = dir.path().join("my-file.bin.part");
@@ -177,7 +183,8 @@ fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>
 
 #[test]
 fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::error::Error>> {
-    let url = format!("{SERVER_URL}/hello.txt");
+    let (_guard, server_url) = spawn_web_server();
+    let url = format!("{server_url}/hello.txt");
 
     let client = Client::builder()
         .user_agent("my-user-agent/1.0")
