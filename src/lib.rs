@@ -22,13 +22,13 @@ pub use handles::{DownloadResult, Progress, ProgressHandle, RetryHandle, RetryHa
 pub use http::{HeaderMap, HeaderValue, header::IntoHeaderName};
 pub use utils::into_uri::IntoUri;
 
+pub use client_builder::ClientBuilder;
+
 #[cfg(feature = "blocking")]
 pub mod blocking;
 
 #[cfg(feature = "async")]
 mod nonblocking;
-#[cfg(feature = "async")]
-pub use client_builder::ClientBuilder;
 #[cfg(feature = "async")]
 pub use nonblocking::{Client, Download};
 
