@@ -39,6 +39,7 @@ pub fn open_file_for_writing(part_file: &Path) -> Result<std::fs::File, Error> {
 
     let file = std::fs::OpenOptions::new()
         .create(true)
+        .write(true)
         .append(true)
         .open(part_file)
         .map_err(|e| Error::Write {
