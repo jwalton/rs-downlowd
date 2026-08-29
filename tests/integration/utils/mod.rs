@@ -1,8 +1,12 @@
 use std::{
-    collections::HashMap, fs, io::Write, path::{Path, PathBuf}, sync::{Mutex, OnceLock}
+    collections::HashMap,
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
 };
 
-use rand::Fill;
+use rand::RngExt;
 
 mod progress_recorder;
 pub use progress_recorder::*;
@@ -79,7 +83,7 @@ fn big_file(size: usize) -> BigFile {
         let mut buffer = [0u8; 4096];
         let mut rng = rand::rng();
         while remaining > 0 {
-            buffer.fill(&mut rng);
+            rng.fill(&mut buffer);
             let buffer = &buffer[..remaining.min(buffer.len())];
             file.write_all(buffer).expect("write to file");
             remaining -= buffer.len();
