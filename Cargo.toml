@@ -40,3 +40,9 @@ name = "dl"
 
 [package.metadata.docs.rs]
 all-features = true
+
+[lints.clippy]
+pedantic.level = "warn"
+cargo.level = "warn"
+all.level = "warn"
+print_stdout.level = "warn"

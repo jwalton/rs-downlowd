@@ -15,7 +15,7 @@ pub struct BlockingTokenBucket {
     /// The target maximum bytes per second.
     pub max_bytes_per_second: AtomicU64,
 
-    /// Condvar used to wake if the max_bytes_per_second changes.
+    /// Condvar used to wake if the `max_bytes_per_second` changes.
     cond: Condvar,
 
     /// Tokens currently in the bucket.
@@ -40,7 +40,7 @@ impl BlockingTokenBucket {
         guard.bytes_consumed(bytes);
     }
 
-    /// Set the maximum bytes per second for this TokenBucket instance.
+    /// Set the maximum bytes per second for this `TokenBucket` instance.
     pub fn set_max_bytes_per_second(&self, max_bps: Option<u64>) {
         self.ever_enabled
             .fetch_or(max_bps.is_some(), Ordering::Relaxed);
@@ -115,7 +115,7 @@ mod tests {
         let _ = waiter.join();
         let elapsed = start.elapsed();
 
-        assert!(elapsed < Duration::from_millis(500), "Waiter took a long time to wake.")
+        assert!(elapsed < Duration::from_millis(500), "Waiter took a long time to wake.");
     }
 
     #[test]

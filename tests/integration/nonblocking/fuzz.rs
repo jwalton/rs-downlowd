@@ -13,6 +13,7 @@ use crate::integration::utils::{self, web_server::spawn_web_server_async};
 
 /// This test case repeatedly creates and cancels a download to ensure that
 /// there are no timing issues or cancel-safety problems.
+#[allow(clippy::print_stdout)]
 #[tokio::test]
 async fn should_work_when_cancelled() -> Result<(), Box<dyn std::error::Error>> {
     let file_size = 3 * 1024 * 1024; // 3 MB.

@@ -1,5 +1,6 @@
 use std::{cmp::min, time::Duration};
 
+#[must_use]
 /// Function which calculates an exponential backoff duration based on the number of failures.
 pub fn exponential_backoff(
     initial_delay: Duration,
@@ -9,7 +10,8 @@ pub fn exponential_backoff(
     if failures == 0 {
         Duration::ZERO
     } else {
-        let failures = min(failures, u32::MAX as u64) as u32;
+        #[allow(clippy::cast_possible_truncation)]
+        let failures = min(failures, u64::from(u32::MAX)) as u32;
         (initial_delay * 2u32.saturating_pow(failures - 1)).min(max_delay)
     }
 }
@@ -37,10 +39,10 @@ mod tests {
         assert_eq!(backoff(5), Duration::from_millis(1600));
         assert_eq!(backoff(6), Duration::from_millis(3200));
         assert_eq!(backoff(7), Duration::from_millis(6400));
-        assert_eq!(backoff(8), Duration::from_millis(10000));
-        assert_eq!(backoff(9), Duration::from_millis(10000));
-        assert_eq!(backoff(u32::MAX as u64), Duration::from_millis(10000));
-        assert_eq!(backoff(u32::MAX as u64 + 1), Duration::from_millis(10000));
-        assert_eq!(backoff(u64::MAX), Duration::from_millis(10000));
+        assert_eq!(backoff(8), Duration::from_secs(10));
+        assert_eq!(backoff(9), Duration::from_secs(10));
+        assert_eq!(backoff(u64::from(u32::MAX)), Duration::from_secs(10));
+        assert_eq!(backoff(u64::from(u32::MAX) + 1), Duration::from_secs(10));
+        assert_eq!(backoff(u64::MAX), Duration::from_secs(10));
     }
 }

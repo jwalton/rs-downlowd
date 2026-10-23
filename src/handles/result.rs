@@ -18,7 +18,7 @@ pub struct DownloadResult {
 }
 
 impl DownloadResult {
-    /// Create a new DownloadResult.
+    /// Create a new `DownloadResult`.
     #[must_use]
     pub(crate) fn new(progress: ProgressHandle) -> Self {
         Self {

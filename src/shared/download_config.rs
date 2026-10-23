@@ -137,6 +137,7 @@ impl DownloadConfig {
 
 macro_rules! config_proxy {
     ( ) => {
+        #[must_use]
         /// Set the user agent for this download.
         pub fn user_agent<V>(mut self, user_agent: V) -> Self
         where
@@ -147,6 +148,7 @@ macro_rules! config_proxy {
             self
         }
 
+        #[must_use]
         /// Add a header to this download.
         pub fn header<K, V>(mut self, key: K, value: V) -> Self
         where
@@ -158,6 +160,7 @@ macro_rules! config_proxy {
             self
         }
 
+        #[must_use]
         /// Add a set of Headers to the existing ones on this download.
         /// The headers will be merged in to any already set.
         pub fn headers(mut self, headers: http::HeaderMap) -> Self {
@@ -165,6 +168,7 @@ macro_rules! config_proxy {
             self
         }
 
+        #[must_use]
         /// Override the the maxmimum number of times to consecutively retry the
         /// download without making any progress. Pass in `None` to retry forever.
         pub fn max_retries(mut self, max_retries: Option<u64>) -> Self {
@@ -172,6 +176,7 @@ macro_rules! config_proxy {
             self
         }
 
+        #[must_use]
         /// Set the progress reporter for this download.  The given reporter will
         /// be called periodically as data is downloaded.
         pub fn on_progress(
@@ -182,6 +187,7 @@ macro_rules! config_proxy {
             self
         }
 
+        #[must_use]
         /// Set the destination path for the downloaded file.  This can be a file to
         /// store the resulting download in, or a directory in which case the
         /// filename will be determined from the URL or the server's `Content-Disposition`
@@ -195,6 +201,7 @@ macro_rules! config_proxy {
             self
         }
 
+        #[must_use]
         /// Set the etag for this file.  If you have already downloaded part of the
         /// file and know the etag, setting this will allow the download to verify
         /// that the file has not changed on the server before resuming.  If neither
@@ -205,6 +212,7 @@ macro_rules! config_proxy {
             self
         }
 
+        #[must_use]
         /// Set the last modified time for this file.  If you have already downloaded
         /// part of the file and know the last modified time, setting this will allow
         /// the download to verify that the file has not changed on the server before

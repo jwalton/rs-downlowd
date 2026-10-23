@@ -44,16 +44,16 @@ pub enum Error {
         cause: std::io::Error,
     },
 
-    /// The server returned an error status code.  UnexpectedStatus errors may
+    /// The server returned an error status code.  `UnexpectedStatus` errors may
     /// be retryable, depending on the status code.  5xx status codes are
     /// retryable, while 4xx status codes are not.
     #[error("Unexpected response status: {status}")]
     #[non_exhaustive]
     UnexpectedStatus { status: u16 },
 
-    /// FileChanged is thown when attempting to resume a download, and the etag,
+    /// `FileChanged` is thown when attempting to resume a download, and the etag,
     /// last-modified, or file length returned by the server differs from what
-    /// we expect.  FileChanged errors are retryable.
+    /// we expect.  `FileChanged` errors are retryable.
     #[error("File changed on server during download: {description}")]
     #[non_exhaustive]
     FileChanged { description: &'static str },
@@ -81,6 +81,7 @@ impl Error {
         }
     }
 
+    #[must_use]
     /// Return a copy of this error with the URL elided.
     pub fn without_uri(self) -> Self {
         if let Self::Network { cause, .. } = self {

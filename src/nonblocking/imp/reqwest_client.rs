@@ -59,10 +59,10 @@ impl maybe_async::Client for ReqwestClient {
         };
 
         let response_url = response.url().as_str();
-        let returned_uri = if response_url != url {
-            response_url.parse::<Uri>().ok()
-        } else {
+        let returned_uri = if response_url == url {
             None
+        } else {
+            response_url.parse::<Uri>().ok()
         };
 
         (returned_uri, Ok(Response { inner: response }))
@@ -77,7 +77,7 @@ impl From<reqwest::Error> for Error {
             }
         } else {
             Error::Network {
-                uri: value.url().map(|u| u.to_string()).unwrap_or_default(),
+                uri: value.url().map(ToString::to_string).unwrap_or_default(),
                 cause: value.without_url().to_string(),
             }
         }

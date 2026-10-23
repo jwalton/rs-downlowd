@@ -21,12 +21,12 @@ impl ProgressRecorder {
     }
 
     pub fn record_progress(&self, progress: &mut ProgressHandle) {
-        record_progress(self.records.clone(), progress);
+        record_progress(&self.records, progress);
     }
 
     pub fn on_progress(&self) -> impl Fn(&mut ProgressHandle) + Send + Sync + 'static {
         let records = self.records.clone();
-        move |p| record_progress(records.clone(), p)
+        move |p| record_progress(&records, p)
     }
 
     pub fn records(&self) -> Vec<ProgressRecord> {
@@ -35,7 +35,7 @@ impl ProgressRecorder {
     }
 }
 
-fn record_progress(records: Arc<Mutex<Vec<ProgressRecord>>>, progress: &mut ProgressHandle) {
+fn record_progress(records: &Arc<Mutex<Vec<ProgressRecord>>>, progress: &mut ProgressHandle) {
     let mut records = records.lock().unwrap();
     records.push(ProgressRecord {
         bytes: progress.bytes(),

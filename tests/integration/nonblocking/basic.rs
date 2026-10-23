@@ -83,18 +83,7 @@ async fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::err
     write_sidecar_file(&sidecar_file, None, None, Some(MESSAGE.len() as u64))?;
 
     let client = Client::new();
-    let result = client
-        .get(&url)
-        .destination(&destination)
-        .on_progress(|progress| {
-            println!(
-                "Downloaded {} of {} bytes",
-                progress.bytes(),
-                progress.remote_length().unwrap()
-            );
-        })
-        .send()
-        .await?;
+    let result = client.get(&url).destination(&destination).send().await?;
 
     assert_eq!(&result.path, &destination);
     let file_contents = tokio::fs::read_to_string(&result.path).await?;
@@ -148,11 +137,12 @@ async fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
         .await;
 
     let err = result.err().unwrap();
-    assert_eq!(format!("{}", err), "Unexpected response status: 404");
+    assert_eq!(format!("{err}"), "Unexpected response status: 404");
 
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 #[tokio::test]
 async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>> {
     let server_url = spawn_web_server_async().await;
@@ -192,6 +182,7 @@ async fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 #[tokio::test]
 async fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::error::Error>> {
     let server_url = spawn_web_server_async().await;

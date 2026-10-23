@@ -1,3 +1,5 @@
+//! Token-bucket rate limiter, shared between the async and blocking limiters.
+
 use std::time::{Duration, Instant};
 
 pub const UNLIMITED: u64 = 0;
@@ -51,11 +53,12 @@ impl TokenBucket {
     fn time_to_wait_inner(&mut self, max_bps: u64, elapsed: Duration) -> Option<Duration> {
         let elapsed_ms = elapsed.as_millis();
 
-        if elapsed_ms > u64::MAX as u128 {
+        if elapsed_ms > u128::from(u64::MAX) {
             // If we've waited more than 550 million years, just reset the bucket.
             self.tokens = 0;
         } else {
             // Remove tokens from the bucket based on the elapsed time.
+            #[allow(clippy::cast_possible_truncation)]
             let tokens_to_remove = (elapsed_ms as u64).saturating_mul(max_bps) / 1000;
             self.tokens = self.tokens.saturating_sub(tokens_to_remove);
         }
@@ -75,7 +78,12 @@ impl TokenBucket {
 mod tests {
     use super::*;
 
-    fn consume_bytes(limiter: &mut TokenBucket, max_bps: u64, bytes: u64, ms: u64) -> Option<Duration> {
+    fn consume_bytes(
+        limiter: &mut TokenBucket,
+        max_bps: u64,
+        bytes: u64,
+        ms: u64,
+    ) -> Option<Duration> {
         limiter.bytes_consumed(bytes);
         limiter.time_to_wait_inner(max_bps, Duration::from_millis(ms))
     }

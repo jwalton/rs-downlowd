@@ -22,7 +22,7 @@ pub fn parse_content_range(headers: &HeaderMap) -> Option<ContentRange> {
 impl ContentRange {
     pub fn from_str(value: &str) -> Option<Self> {
         let value = value.strip_prefix("bytes")?;
-        let slash = value.find("/")?;
+        let slash = value.find('/')?;
         let (range_part, total_part) = value.split_at(slash);
 
         let range = Range::from_str(range_part);
@@ -30,7 +30,7 @@ impl ContentRange {
         let total = if total_part.trim() == "/*" {
             None
         } else {
-            total_part.trim_start_matches("/").trim().parse().ok()
+            total_part.trim_start_matches('/').trim().parse().ok()
         };
 
         Some(Self { range, total })
@@ -43,9 +43,9 @@ impl Range {
             return None;
         }
 
-        let dash = value.find("-")?;
+        let dash = value.find('-')?;
         let (start, end) = value.split_at(dash);
-        let (start, end) = (start.trim(), end.trim_start_matches("-").trim());
+        let (start, end) = (start.trim(), end.trim_start_matches('-').trim());
 
         Some(Self {
             start: start.parse().ok()?,

@@ -18,13 +18,15 @@ use crate::{
 /// downloads.  Clients are cheap to clone.
 #[derive(Clone)]
 pub struct Client {
-    client: UreqClient,
+    inner: UreqClient,
     headers: HeaderMap,
     default_max_retries: Option<u64>,
     limiter: Arc<BlockingTokenBucket>,
 }
 
 impl Client {
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     /// Create a new client.
     pub fn new() -> Self {
         BlockingClientBuilder::default().build().unwrap()
@@ -39,13 +41,14 @@ impl Client {
         let limiter = Arc::new(BlockingTokenBucket::new(max_bytes_per_second));
 
         Self {
-            client: UreqClient::new(agent),
+            inner: UreqClient::new(agent),
             headers,
             default_max_retries,
             limiter,
         }
     }
 
+    #[must_use]
     /// Build a new client.
     pub fn builder() -> BlockingClientBuilder {
         BlockingClientBuilder::default()
@@ -69,7 +72,7 @@ impl Client {
         let mut config = DownloadConfig::new(uri, &self.headers);
         config.max_retries(self.default_max_retries);
 
-        Download::new(self.client.clone(), self.limiter.clone(), config)
+        Download::new(self.inner.clone(), self.limiter.clone(), config)
     }
 
     /// Update the maximum bytes per second that can be downloaded. This limit

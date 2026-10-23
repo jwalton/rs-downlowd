@@ -29,13 +29,15 @@ impl ClientBuilder {
 }
 
 impl BlockingClientBuilder {
-    /// Create a new ClientBuilder with the given user agent.
+    #[must_use]
+    /// Create a new `ClientBuilder` with the given user agent.
     pub fn new() -> Self {
         Self {
             builder: ClientBuilder::default(),
         }
     }
 
+    #[must_use]
     /// Set the user agent for the client.
     pub fn user_agent<V>(mut self, user_agent: V) -> Self
     where
@@ -46,6 +48,7 @@ impl BlockingClientBuilder {
         self
     }
 
+    #[must_use]
     /// Add a default header for every request.
     pub fn header<K, V>(mut self, key: K, value: V) -> Self
     where
@@ -57,12 +60,14 @@ impl BlockingClientBuilder {
         self
     }
 
+    #[must_use]
     /// Set the default headers for every request.
     pub fn headers(mut self, headers: HeaderMap) -> Self {
         self.builder = self.builder.headers(headers);
         self
     }
 
+    #[must_use]
     /// Set the default maxmimum number of times to consecutively retry a download
     /// without making any progress. The default is 5. This counter resets whenever
     /// at least one byte of data is downloaded from the server. Pass in `None`
@@ -72,6 +77,7 @@ impl BlockingClientBuilder {
         self
     }
 
+    #[must_use]
     /// Set the maximum bytes per second that can be downloaded. This limit is
     /// shared across all downloads using this client.
     pub fn max_bytes_per_second(mut self, max: Option<u64>) -> Self {
@@ -80,6 +86,12 @@ impl BlockingClientBuilder {
     }
 
     /// Build a blocking client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the parameters passed to the builder were invalid
+    /// (e.g. invalid header values, or a zero rate limit).
+    ///
     pub fn build(self) -> Result<Client, Error> {
         self.builder.blocking()
     }

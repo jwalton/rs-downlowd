@@ -20,6 +20,8 @@ pub struct RetryHandle {
 }
 
 impl RetryHandle {
+    /// Create a new `RetryHandle`.
+    #[must_use]
     pub fn new(
         total_tries: u64,
         retries: u64,
@@ -35,17 +37,20 @@ impl RetryHandle {
         }
     }
 
+    #[must_use]
     /// Returns the total number of tries so far to download this file.
     pub fn total_tries(&self) -> u64 {
         self.total_tries
     }
 
+    #[must_use]
     /// Returns the number of consecutive retries due to errors.  This number
     /// resets to zero if we make progress downloading a file.
     pub fn retries(&self) -> u64 {
         self.retries
     }
 
+    #[must_use]
     /// Returns the delay before the next retry.
     pub fn delay(&self) -> std::time::Duration {
         self.delay
@@ -56,6 +61,7 @@ impl RetryHandle {
         self.delay = delay;
     }
 
+    #[must_use]
     /// Returns the error that caused the retry.
     pub fn error(&self) -> &crate::Error {
         &self.error

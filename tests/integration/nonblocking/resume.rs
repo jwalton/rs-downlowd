@@ -77,18 +77,7 @@ async fn should_continue_a_file_from_sidecar() -> Result<(), Box<dyn std::error:
     )?;
 
     let client = Client::new();
-    let result = client
-        .get(&url)
-        .destination(&destination)
-        .on_progress(|progress| {
-            println!(
-                "Downloaded {} of {} bytes",
-                progress.bytes(),
-                progress.remote_length().unwrap()
-            );
-        })
-        .send()
-        .await?;
+    let result = client.get(&url).destination(&destination).send().await?;
 
     assert_eq!(&result.path, &destination);
 
@@ -200,13 +189,6 @@ async fn should_continue_a_file_from_sidecar_that_is_already_complete_and_rename
     let result = Client::new()
         .get(&url)
         .destination(&destination)
-        .on_progress(|progress| {
-            println!(
-                "Downloaded {} of {} bytes",
-                progress.bytes(),
-                progress.remote_length().unwrap()
-            );
-        })
         .send()
         .await?;
 

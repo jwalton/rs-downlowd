@@ -15,7 +15,7 @@ pub struct TokioTokenBucket {
 }
 
 impl TokioTokenBucket {
-    /// Create a new TokioLimiter with the given maximum bytes per second.
+    /// Create a new `TokioLimiter` with the given maximum bytes per second.
     pub fn new(max_bytes_per_second: Option<u64>) -> Self {
         let bucket = TokenBucket::new();
 
@@ -57,10 +57,8 @@ impl TokioTokenBucket {
             guard.time_to_wait(self.max_bytes_per_second.load(Ordering::Relaxed))
         {
             select! {
-                _ = tokio::time::sleep(delay) => {}
-                _ = self.notify.notified() => {
-                    continue;
-                }
+                () = tokio::time::sleep(delay) => {}
+                () = self.notify.notified() => {}
             };
         }
     }

@@ -6,7 +6,7 @@ use ureq::{Agent, ResponseExt};
 
 use crate::{Error, maybe_async};
 
-const BUFFER_SIZE: usize = 128 * 1024;
+const BUFFER_SIZE: usize = 16384;
 
 #[derive(Clone)]
 pub struct UreqClient {
@@ -39,7 +39,7 @@ impl maybe_async::Response for Response {
         }
 
         let chunk = Bytes::from_owner(buf);
-        return Ok(Some(chunk.slice(0..n)));
+        Ok(Some(chunk.slice(0..n)))
     }
 }
 
@@ -60,7 +60,7 @@ impl maybe_async::Client for UreqClient {
     ) -> (Option<Uri>, Result<Self::Response, crate::Error>) {
         let mut request = ::http::Request::builder().uri(uri).method(method);
         if let Some(h) = request.headers_mut() {
-            for (k, v) in headers.iter() {
+            for (k, v) in &headers {
                 h.append(k, v.clone());
             }
         }
@@ -96,10 +96,10 @@ impl maybe_async::Client for UreqClient {
             }
         };
 
-        let returned_url = if response.get_uri() != uri {
-            Some(response.get_uri().to_owned())
-        } else {
+        let returned_url = if response.get_uri() == uri {
             None
+        } else {
+            Some(response.get_uri().to_owned())
         };
 
         let response = Response { inner: response };

@@ -39,6 +39,7 @@ impl Download {
     // Expose functions to update self.config.
     config_proxy! {}
 
+    #[must_use]
     /// Provide a callback to be called whenever a download is retried. This can
     /// be used to customize the retry time, or abort the download. The default
     /// is to use exponential backoff:
@@ -89,6 +90,7 @@ impl Download {
         self
     }
 
+    #[allow(clippy::missing_panics_doc)]
     /// Returns the filename that downlowd will use when downloading the file.
     /// This is determined by making a HEAD request to the server, and looking
     /// at the `Content-Disposition` header, if present, or falling back to the
@@ -98,11 +100,20 @@ impl Download {
             self.head
                 .get(&self.client, &self.config.uri, &self.config.headers),
         )
-        .unwrap()
+        .expect("Blocking implementation should only call blocking functions")
         .get_remote_file_name()
     }
 
+    #[allow(clippy::missing_panics_doc)]
     /// Send the download request to the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no download location is specified and the current
+    /// folder cannot be determined, or if the download fails in some non-retryable
+    /// way (such as the server returning a 404) or if the maximum number of
+    /// retries is reached.
+    ///
     pub fn send(self) -> Result<DownloadResult, Error> {
         if let Some(e) = self.config.err {
             return Err(e);
@@ -121,6 +132,6 @@ impl Download {
             .await?;
             inner.download::<StdSystem>().await
         })
-        .unwrap()
+        .expect("Blocking implementation should only call blocking functions")
     }
 }

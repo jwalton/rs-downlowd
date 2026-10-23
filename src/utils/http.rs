@@ -18,7 +18,7 @@ where
                 cause: e.into().to_string(),
             });
         }
-    };
+    }
 
     Ok(())
 }
@@ -39,7 +39,7 @@ where
                 cause: e.into().to_string(),
             });
         }
-    };
+    }
 
     Ok(())
 }
@@ -47,7 +47,7 @@ where
 /// Append all values from `new_headers` to `headers`.
 pub fn append_all_headers<T>(headers: &mut HeaderMap<T>, new_headers: HeaderMap<T>) {
     let mut key = HeaderName::from_static("x-placeholder");
-    for (k, value) in new_headers.into_iter() {
+    for (k, value) in new_headers {
         if let Some(k) = k {
             key = k;
         }

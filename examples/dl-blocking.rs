@@ -1,6 +1,7 @@
 #[cfg(not(feature = "blocking"))]
 fn main() {}
 
+#[allow(clippy::print_stdout)]
 #[cfg(feature = "blocking")]
 fn main() {
     use std::{env, path::Path, process};
@@ -38,8 +39,8 @@ fn main() {
     {
         Ok(result) => {
             println!(
-                "Downloaded {} bytes to {:?}",
-                result.bytes_downloaded, result.path
+                "Downloaded {} bytes to {}",
+                result.bytes_downloaded, result.path.display()
             );
         }
         Err(e) => {

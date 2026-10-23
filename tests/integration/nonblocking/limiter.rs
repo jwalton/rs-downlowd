@@ -5,6 +5,7 @@ use temp_dir::TempDir;
 
 use crate::integration::utils::{self, web_server::spawn_web_server_async, is_ci};
 
+#[allow(clippy::print_stdout)]
 #[tokio::test]
 async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>> {
     let file_size = 5 * 1024 * 1024; // 5 MB.
@@ -27,6 +28,7 @@ async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>>
     let result = tokio::time::timeout(timeout, fut).await??;
     let elapsed = start.elapsed().unwrap().as_millis();
 
+    #[allow(clippy::cast_precision_loss)]
     let rate = result.bytes_downloaded as f64 / (elapsed as f64 / 1000.0);
     println!(
         "Downloaded {} bytes in {elapsed} ms ({rate:.2} bytes/sec)",
@@ -42,6 +44,7 @@ async fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 #[tokio::test]
 async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn std::error::Error>> {
     let file_size = 10 * 1024 * 1024; // 10 MB.
@@ -71,7 +74,7 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
     tokio::time::timeout(timeout, join_handle).await???;
     let elapsed = start.elapsed().unwrap().as_millis();
 
-    println!("Downloaded took {elapsed} ms",);
+    println!("Downloaded took {elapsed} ms");
 
     // 1 second of downloading slowly, then 2 seconds at 5mb/s.  Wall clock tests
     // like this can vary wildly on CI runners, so...
@@ -84,6 +87,7 @@ async fn should_change_download_speed_partway_through() -> Result<(), Box<dyn st
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 #[tokio::test]
 async fn should_allow_removing_download_speed_partway_through()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -114,7 +118,7 @@ async fn should_allow_removing_download_speed_partway_through()
     tokio::time::timeout(timeout, fut).await???;
     let elapsed = start.elapsed().unwrap().as_millis();
 
-    println!("Downloaded took {elapsed} ms",);
+    println!("Downloaded took {elapsed} ms");
     assert!(
         (900..=1500).contains(&elapsed),
         "Download was not rate limited. 1000 ms expected, got {elapsed} ms"

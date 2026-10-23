@@ -86,6 +86,7 @@ impl Download {
     /// # }
     /// ```
     ///
+    #[must_use]
     pub fn on_retry(mut self, retry: impl FnMut(&mut RetryHandle) + Send + 'static) -> Self {
         self.config.on_retry(retry);
         self
@@ -105,6 +106,14 @@ impl Download {
     }
 
     /// Send the download request to the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no download location is specified and the current
+    /// folder cannot be determined, or if the download fails in some non-retryable
+    /// way (such as the server returning a 404) or if the maximum number of
+    /// retries is reached.
+    ///
     pub async fn send(self) -> Result<DownloadResult, Error> {
         if let Some(e) = self.config.err {
             return Err(e);

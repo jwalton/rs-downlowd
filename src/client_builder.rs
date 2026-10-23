@@ -22,7 +22,8 @@ pub struct ClientBuilder {
 }
 
 impl ClientBuilder {
-    /// Create a new ClientBuilder with the given user agent.
+    #[must_use]
+    /// Create a new `ClientBuilder` with the given user agent.
     pub fn new() -> Self {
         ClientBuilder {
             headers: HeaderMap::new(),
@@ -34,6 +35,7 @@ impl ClientBuilder {
         }
     }
 
+    #[must_use]
     /// Set the user agent for the client.
     pub fn user_agent<V>(mut self, user_agent: V) -> Self
     where
@@ -46,9 +48,10 @@ impl ClientBuilder {
         self
     }
 
+    #[must_use]
     /// Add a default header for every request.  If the key has already been
     /// added as a header, then the value will be pushed to the end of the list
-    /// of values associated witht his header (like [HeaderMap::append]).
+    /// of values associated witht his header (like [``HeaderMap::append``]).
     pub fn header<K, V>(mut self, key: K, value: V) -> Self
     where
         K: IntoHeaderName,
@@ -62,12 +65,14 @@ impl ClientBuilder {
         self
     }
 
+    #[must_use]
     /// Set the default headers for every request.
     pub fn headers(mut self, headers: HeaderMap) -> Self {
         utils::http::append_all_headers(&mut self.headers, headers);
         self
     }
 
+    #[must_use]
     /// Set the default maxmimum number of times to consecutively retry a download
     /// without making any progress. The default is 5. This counter resets whenever
     /// at least one byte of data is downloaded from the server. Pass in `None`
@@ -77,6 +82,7 @@ impl ClientBuilder {
         self
     }
 
+    #[must_use]
     /// Set the maximum bytes per second that can be downloaded. This limit is
     /// shared across all downloads using this client.
     pub fn max_bytes_per_second(mut self, max: Option<u64>) -> Self {
@@ -90,6 +96,7 @@ impl ClientBuilder {
         self
     }
 
+    #[must_use]
     /// Set the reqwest client instance to use when making nonblocking requests.
     /// This only applies to nonblocking clients, but will allow you to specify
     /// a reqwest client with advanced options configured, or allow you to share

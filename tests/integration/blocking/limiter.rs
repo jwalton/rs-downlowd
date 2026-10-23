@@ -20,6 +20,7 @@ where
     rx.recv_timeout(timeout).unwrap()
 }
 
+#[allow(clippy::print_stdout)]
 #[test]
 fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>> {
     let file_size = 5 * 1024 * 1024; // 5 MB.
@@ -44,6 +45,7 @@ fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>> {
 
     let elapsed = start.elapsed().unwrap().as_millis();
 
+    #[allow(clippy::cast_precision_loss)]
     let rate = result.bytes_downloaded as f64 / (elapsed as f64 / 1000.0);
     println!(
         "Downloaded {} bytes in {elapsed} ms ({rate:.2} bytes/sec)",
@@ -59,6 +61,7 @@ fn should_limit_download_speed() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 #[test]
 fn should_change_download_speed_partway_through() -> Result<(), Box<dyn std::error::Error>> {
     let file_size = 10 * 1024 * 1024; // 10 MB.
@@ -86,7 +89,7 @@ fn should_change_download_speed_partway_through() -> Result<(), Box<dyn std::err
     with_timeout(Duration::from_secs(10), move || join_handle.join()).unwrap()?;
     let elapsed = start.elapsed().unwrap().as_millis();
 
-    println!("Downloaded took {elapsed} ms",);
+    println!("Downloaded took {elapsed} ms");
 
     // 1 second of downloading slowly, then 2 seconds at 5mb/s.  Wall clock tests
     // like this can vary wildly on CI runners, so...
@@ -99,6 +102,7 @@ fn should_change_download_speed_partway_through() -> Result<(), Box<dyn std::err
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 #[test]
 fn should_allow_removing_download_speed_partway_through() -> Result<(), Box<dyn std::error::Error>>
 {
@@ -127,7 +131,7 @@ fn should_allow_removing_download_speed_partway_through() -> Result<(), Box<dyn 
     with_timeout(Duration::from_secs(10), move || join_handle.join()).unwrap()?;
     let elapsed = start.elapsed().unwrap().as_millis();
 
-    println!("Downloaded took {elapsed} ms",);
+    println!("Downloaded took {elapsed} ms");
     assert!(
         (900..=1500).contains(&elapsed),
         "Download was not rate limited. 1000 ms expected, got {elapsed} ms"

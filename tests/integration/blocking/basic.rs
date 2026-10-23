@@ -11,13 +11,12 @@ use crate::integration::utils::{
 const MESSAGE: &str = "hello world";
 
 #[test]
-fn should_get_the_name_of_the_file() -> Result<(), Box<dyn std::error::Error>> {
+fn should_get_the_name_of_the_file() {
     let server_url = spawn_web_server();
     let url = format!("{server_url}/hello.txt");
 
     let mut download = Client::new().get(&url);
     assert_eq!(download.get_remote_file_name(), "hello.txt");
-    Ok(())
 }
 
 #[test]
@@ -69,6 +68,7 @@ fn should_download_a_file() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 #[test]
 fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::error::Error>> {
     let server_url = spawn_web_server();
@@ -82,13 +82,6 @@ fn should_skip_an_already_downloaded_file() -> Result<(), Box<dyn std::error::Er
     let result = client
         .get(&url)
         .destination(&destination)
-        .on_progress(|progress| {
-            println!(
-                "Downloaded {} of {} bytes",
-                progress.bytes(),
-                progress.remote_length().unwrap()
-            );
-        })
         .send()?;
 
     assert_eq!(&result.path, &destination);
@@ -138,11 +131,12 @@ fn should_fail_on_404() -> Result<(), Box<dyn std::error::Error>> {
         .send();
 
     let err = result.err().unwrap();
-    assert_eq!(format!("{}", err), "Unexpected response status: 404");
+    assert_eq!(format!("{err}"), "Unexpected response status: 404");
 
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 #[test]
 fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>> {
     let server_url = spawn_web_server();
@@ -181,6 +175,7 @@ fn should_allow_cancelling_a_download() -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 #[test]
 fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::error::Error>> {
     let server_url = spawn_web_server();

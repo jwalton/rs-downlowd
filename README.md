@@ -15,6 +15,10 @@ Downloading a file is easy. Just make an HTTP request, and write the results to 
 
 See [the documentation at docs.rs](https://docs.rs/downlowd/latest/downlowd/).
 
+## Contributing
+
+See the [dev documentation](https://github.com/jwalton/rs-downlowd/blob/master/README-DEV.md) for a quick overview of this create.  Note that this create was written without AI; please be considerate in your use of AI if creating pull requests.
+
 ## Crate Features
 
 - **async** - Enabled by default. Provides [`Client`] for downloading files. This uses [reqwest](https://docs.rs/reqwest/latest/reqwest/) and [tokio](https://tokio.rs/) under the hood.

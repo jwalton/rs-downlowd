@@ -17,14 +17,20 @@ use crate::{
 /// downloads.  Clients are cheap to clone.
 #[derive(Clone)]
 pub struct Client {
-    client: ReqwestClient,
+    inner: ReqwestClient,
     headers: HeaderMap,
     default_max_retries: Option<u64>,
     limiter: Arc<TokioTokenBucket>,
 }
 
 impl ClientBuilder {
-    /// Build the client.
+    /// Build a client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the parameters passed to the builder were invalid
+    /// (e.g. invalid header values, or a zero rate limit).
+    ///
     pub fn build(self) -> Result<Client, Error> {
         if let Some(e) = self.err {
             return Err(e);
@@ -42,13 +48,15 @@ impl ClientBuilder {
 }
 
 impl Client {
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     /// Create a new client.
     pub fn new() -> Self {
         ClientBuilder::default().build().unwrap()
     }
 
     fn new_inner(
-        client: ReqwestClient,
+        inner: ReqwestClient,
         headers: HeaderMap,
         default_max_retries: Option<u64>,
         max_bytes_per_second: Option<u64>,
@@ -56,13 +64,14 @@ impl Client {
         let limiter = Arc::new(TokioTokenBucket::new(max_bytes_per_second));
 
         Self {
-            client,
+            inner,
             headers,
             default_max_retries,
             limiter,
         }
     }
 
+    #[must_use]
     /// Build a new client.
     pub fn builder() -> ClientBuilder {
         ClientBuilder::new()
@@ -86,7 +95,7 @@ impl Client {
     pub fn get(&self, url: impl IntoUri) -> Download {
         let mut config = DownloadConfig::new(url, &self.headers);
         config.max_retries(self.default_max_retries);
-        Download::new(self.client.clone(), self.limiter.clone(), config)
+        Download::new(self.inner.clone(), self.limiter.clone(), config)
     }
 
     /// Update the maximum bytes per second that can be downloaded. This limit

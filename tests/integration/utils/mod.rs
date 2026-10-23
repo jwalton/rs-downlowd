@@ -80,7 +80,8 @@ fn big_file(size: usize) -> BigFile {
         .join(format!("big-file-{size}.bin"));
 
     // Check if the file already exists and is the correct size.
-    let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) as usize;
+    #[allow(clippy::cast_possible_truncation)]
+    let file_size = std::fs::metadata(&path).map_or(0, |m| m.len()) as usize;
     if file_size != size {
         let mut file = std::fs::File::create(&path).expect("create file");
 
@@ -124,13 +125,13 @@ pub fn write_sidecar_file(
 ) -> std::io::Result<()> {
     let mut contents = String::new();
     if let Some(last_modified) = last_modified {
-        contents.push_str(&format!("Last-Modified: {last_modified}\n"));
+        contents = format!("{contents}Last-Modified: {last_modified}\n");
     }
     if let Some(etag) = etag {
-        contents.push_str(&format!("Etag: {etag}\n",));
+        contents = format!("{contents}Etag: {etag}\n");
     }
     if let Some(content_length) = content_length {
-        contents.push_str(&format!("File-Length: {content_length}\n"));
+        contents = format!("{contents}File-Length: {content_length}\n");
     }
     fs::write(path, contents)?;
     Ok(())

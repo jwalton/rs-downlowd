@@ -39,4 +39,4 @@ const DEFAULT_MAX_RETRIES: Option<u64> = Some(5);
 const DEFAULT_MIN_DELAY: Duration = Duration::from_secs(1);
 
 /// Default maximum delay between retries.
-const DEFAULT_MAX_DELAY: Duration = Duration::from_secs(120);
+const DEFAULT_MAX_DELAY: Duration = Duration::from_mins(2);

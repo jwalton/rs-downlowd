@@ -4,10 +4,11 @@ use downlowd::Client;
 use temp_dir::TempDir;
 use tokio::fs;
 
-use crate::integration::utils::{self, web_server::spawn_web_server_async, is_ci};
+use crate::integration::utils::{self, is_ci, web_server::spawn_web_server_async};
 
 const ITERATIONS: u32 = 10;
 
+#[allow(clippy::print_stdout)]
 #[tokio::test]
 async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
@@ -25,7 +26,8 @@ async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
         tokio::fs::write(&destination, &bytes).await?;
     }
     let elapsed = start.elapsed().unwrap();
-    let control_ms_per_iteration = elapsed.as_millis() as f64 / ITERATIONS as f64;
+    #[allow(clippy::cast_precision_loss)]
+    let control_ms_per_iteration = elapsed.as_millis() as f64 / f64::from(ITERATIONS);
 
     // Then, the same, but using downlowd to do the download.
     let client = Client::new();
@@ -35,7 +37,8 @@ async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
         client.get(&url).destination(&destination).send().await?;
     }
     let elapsed = start.elapsed().unwrap();
-    let ms_per_iteration = elapsed.as_millis() as f64 / ITERATIONS as f64;
+    #[allow(clippy::cast_precision_loss)]
+    let ms_per_iteration = elapsed.as_millis() as f64 / f64::from(ITERATIONS);
 
     // Higher is worse.
     let ratio = ms_per_iteration / control_ms_per_iteration;

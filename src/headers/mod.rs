@@ -1,3 +1,5 @@
+//! Defines parsers for the various HTTP headers involved in downloading a file.
+
 use std::borrow::Cow;
 
 use http::{HeaderMap, HeaderName, HeaderValue};
@@ -46,7 +48,7 @@ pub fn etag(headers: &HeaderMap) -> Option<&str> {
     get_header_str(headers, &http::header::ETAG)
 }
 
-/// Returns the value of the last_modified header, if present.
+/// Returns the value of the "last-modified" header, if present.
 pub fn get_last_modified(headers: &HeaderMap) -> Option<&str> {
     get_header_str(headers, &http::header::LAST_MODIFIED)
 }
@@ -99,7 +101,7 @@ mod tests {
 
         let header = make_header(
             "content-disposition",
-            r#"attachment; filename*=UTF-8''file%20name.jpg"#,
+            r"attachment; filename*=UTF-8''file%20name.jpg",
         );
         let filename = parse_content_disposition(&header);
         assert_eq!(filename, Some("file name.jpg".into()));

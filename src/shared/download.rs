@@ -103,12 +103,12 @@ where
         // If the destination is a directory, figure out the filename for the file.
         let is_dir = F::metadata(&destination)
             .await
-            .map(|m| m.is_dir())
-            .unwrap_or_default();
+            .ok()
+            .is_some_and(|m| m.is_dir());
         if is_dir {
             let filename = head.get(client, uri, headers).await.get_remote_file_name();
             destination = destination.join(filename);
-        };
+        }
 
         Ok(Destination::new(destination))
     }
@@ -135,46 +135,46 @@ where
                     Err(e) => {
                         if !e.can_retry() {
                             return Err(e);
-                        } else {
-                            if self.progress.bytes_transferred > bytes_before {
-                                // We made some progress - reset the retry counter.
-                                retries = 0;
-                            }
-                            if let Some(max_retries) = self.max_retries
-                                && retries > max_retries
-                            {
-                                return Err(e);
-                            }
-
-                            // Set a default delay, in case the retry handler doesn't.
-                            let delay = if matches!(e, Error::FileChanged { .. }) {
-                                // The file has changed on the server - we need to start again.
-                                self.part_file.truncate().await?;
-                                self.progress.bytes = 0;
-                                // Reset the local file info. It'll get filled in again
-                                // at the start of the next download attempt.
-                                self.progress
-                                    .local_file_info
-                                    .reset::<F>(&self.progress.destination.sidecar_file)
-                                    .await;
-                                Duration::from_secs(0)
-                            } else {
-                                crate::exponential_backoff(
-                                    DEFAULT_MIN_DELAY,
-                                    DEFAULT_MAX_DELAY,
-                                    retries,
-                                )
-                            };
-
-                            let mut retry_handle =
-                                RetryHandle::new(self.progress.tries, retries, delay, e);
-                            (self.retry_handler)(&mut retry_handle);
-                            if retry_handle.cancelled {
-                                return Err(retry_handle.error);
-                            }
-
-                            S::sleep(retry_handle.delay).await;
                         }
+
+                        if self.progress.bytes_transferred > bytes_before {
+                            // We made some progress - reset the retry counter.
+                            retries = 0;
+                        }
+                        if let Some(max_retries) = self.max_retries
+                            && retries > max_retries
+                        {
+                            return Err(e);
+                        }
+
+                        // Set a default delay, in case the retry handler doesn't.
+                        let delay = if matches!(e, Error::FileChanged { .. }) {
+                            // The file has changed on the server - we need to start again.
+                            self.part_file.truncate().await?;
+                            self.progress.bytes = 0;
+                            // Reset the local file info. It'll get filled in again
+                            // at the start of the next download attempt.
+                            self.progress
+                                .local_file_info
+                                .reset::<F>(&self.progress.destination.sidecar_file)
+                                .await;
+                            Duration::from_secs(0)
+                        } else {
+                            crate::exponential_backoff(
+                                DEFAULT_MIN_DELAY,
+                                DEFAULT_MAX_DELAY,
+                                retries,
+                            )
+                        };
+
+                        let mut retry_handle =
+                            RetryHandle::new(self.progress.tries, retries, delay, e);
+                        (self.retry_handler)(&mut retry_handle);
+                        if retry_handle.cancelled {
+                            return Err(retry_handle.error);
+                        }
+
+                        S::sleep(retry_handle.delay).await;
                     }
                 }
             }
@@ -242,13 +242,13 @@ where
             {
                 // We already have the whole file!
                 return Ok(());
-            } else {
-                // We don't have the whole file, but the server says it can't
-                // give us more?
-                return Err(Error::FileChanged {
-                    description: "range not satisfiable",
-                });
             }
+
+            // We don't have the whole file, but the server says it can't
+            // give us more?
+            return Err(Error::FileChanged {
+                description: "range not satisfiable",
+            });
         }
 
         // If the server returns a "206 - Partial content", we're resuming the download,
@@ -288,7 +288,7 @@ where
         let uri = self.progress.uri();
         let (u, response) = self.client.request(http::Method::GET, uri, headers).await;
         if u.is_some() {
-            self.progress.updated_uri = u
+            self.progress.updated_uri = u;
         }
 
         if let Ok(response) = response.as_ref()
