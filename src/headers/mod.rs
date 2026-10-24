@@ -1,11 +1,11 @@
 //! Defines parsers for the various HTTP headers involved in downloading a file.
 
-use std::borrow::Cow;
-
 use http::{HeaderMap, HeaderName, HeaderValue};
 
+mod content_disposition;
 mod content_range;
 
+pub use content_disposition::*;
 pub use content_range::*;
 
 use crate::file_info::FileInfo;
@@ -21,30 +21,6 @@ fn get_header_str<'a>(headers: &'a HeaderMap, name: &HeaderName) -> Option<&'a s
 /// Parses the `Content-Length` header value into a `u64`.
 pub fn parse_content_length(headers: &HeaderMap) -> Option<u64> {
     get_header_str(headers, &http::header::CONTENT_LENGTH).and_then(|value| value.parse().ok())
-}
-
-/// Parses the filename from the `Content-Disposition` header.
-pub fn parse_content_disposition(headers: &'_ HeaderMap) -> Option<Cow<'_, str>> {
-    if let Some(value) = get_header_str(headers, &http::header::CONTENT_DISPOSITION) {
-        let mut result: Option<Cow<str>> = None;
-
-        value.split(';').for_each(|part| {
-            let trimmed = part.trim();
-            result = if trimmed.starts_with("filename=") && result.is_none() {
-                Some(Cow::Borrowed(
-                    trimmed.trim_start_matches("filename=").trim_matches('"'),
-                ))
-            } else if trimmed.starts_with("filename*=UTF-8''") {
-                urlencoding::decode(trimmed.trim_start_matches("filename*=UTF-8''")).ok()
-            } else {
-                None
-            }
-        });
-
-        result
-    } else {
-        None
-    }
 }
 
 pub fn etag(headers: &HeaderMap) -> Option<&str> {
@@ -81,7 +57,10 @@ pub fn add_resume_download_headers(
                 "Range",
                 HeaderValue::from_str(&format!("bytes={local_size}-")).unwrap(),
             );
-            headers.insert("If-Range", HeaderValue::from_str(if_range).unwrap());
+            headers.insert(
+                http::header::IF_RANGE,
+                HeaderValue::from_str(if_range).unwrap(),
+            );
         }
     }
 }
@@ -92,9 +71,9 @@ mod tests {
 
     use super::*;
 
-    fn make_header(k: &'static str, v: &'static str) -> HeaderMap {
+    fn make_header(k: &'static str, v: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.append(k, HeaderValue::from_static(v));
+        headers.append(k, HeaderValue::from_str(v).unwrap());
         headers
     }
 
@@ -108,44 +87,18 @@ mod tests {
     }
 
     #[test]
-    fn should_parse_content_disposition() {
-        let header = make_header(
-            "content-disposition",
-            r#"attachment; filename="example.txt""#,
-        );
-        let filename = parse_content_disposition(&header);
-        assert_eq!(filename, Some("example.txt".into()));
-
-        let header = make_header(
-            "content-disposition",
-            r"attachment; filename*=UTF-8''file%20name.jpg",
-        );
-        let filename = parse_content_disposition(&header);
-        assert_eq!(filename, Some("file name.jpg".into()));
-
-        // If there's a filename and a filename* in the same header,
-        // filename* should take precedence.
-        let header = make_header(
-            "content-disposition",
-            r#"attachment; filename="foo.txt"; filename*=UTF-8''file%20name.jpg"#,
-        );
-        let filename = parse_content_disposition(&header);
-        assert_eq!(filename, Some("file name.jpg".into()));
-    }
-
-    #[test]
     fn should_prefer_etag_for_if_range_header() {
         let local_size = 10;
         let local_file_info = FileInfo {
             etag: Some("tag".to_string()),
-            last_modified:Some("2023-10-01T12:34:56Z".to_string()),
+            last_modified: Some("2023-10-01T12:34:56Z".to_string()),
             file_length: Some(100),
         };
 
         let mut headers = HeaderMap::new();
         add_resume_download_headers(&mut headers, &local_file_info, local_size);
 
-        let if_range = headers.get("If-Range").unwrap();
+        let if_range = headers.get(http::header::IF_RANGE).unwrap();
         assert_eq!(if_range, "tag");
     }
 
@@ -154,15 +107,14 @@ mod tests {
         let local_size = 10;
         let local_file_info = FileInfo {
             etag: Some("W/tag".to_string()),
-            last_modified:Some("2023-10-01T12:34:56Z".to_string()),
+            last_modified: Some("2023-10-01T12:34:56Z".to_string()),
             file_length: Some(100),
         };
 
         let mut headers = HeaderMap::new();
         add_resume_download_headers(&mut headers, &local_file_info, local_size);
 
-        let if_range = headers.get("If-Range").unwrap();
+        let if_range = headers.get(http::header::IF_RANGE).unwrap();
         assert_eq!(if_range, "2023-10-01T12:34:56Z");
     }
-
 }

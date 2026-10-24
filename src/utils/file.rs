@@ -69,3 +69,51 @@ pub fn open_file_for_writing(part_file: &Path) -> Result<std::fs::File, Error> {
 
     Ok(file)
 }
+
+pub fn sanitize_filename(filename: &str) -> Option<String> {
+    // Split on final "/" or "\" if there is one.
+    let filename = filename.rsplit(['/', '\\', ':']).next().unwrap_or(filename);
+
+    let mut filename = sanitize_filename::sanitize_with_options(
+        filename,
+        sanitize_filename::Options {
+            windows: true,
+            truncate: true,
+            replacement: "",
+        },
+    );
+
+    // Remove any leading "."s so we can't create hidden files.
+    if filename.starts_with('.') {
+        filename = filename.trim_start_matches('.').to_string();
+    }
+
+    if filename.is_empty() {
+        None
+    } else {
+        Some(filename)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_sanitize_filename() {
+        let check = |input: &str, expected: Option<&str>| {
+            let result = sanitize_filename(input);
+            assert_eq!(result.as_deref(), expected);
+        };
+
+        check("/etc/passwd", Some("passwd"));
+        check("../evil", Some("evil"));
+        check("c:evil", Some("evil"));
+        check("c:\\evil", Some("evil"));
+        check("c:/evil", Some("evil"));
+        check("平和.txt", Some("平和.txt"));
+        check(".hidden", Some("hidden"));
+        check("COM1", None);
+    }
+}

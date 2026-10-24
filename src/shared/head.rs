@@ -1,11 +1,10 @@
-use std::borrow::Cow;
-
 use http::{HeaderMap, Method, StatusCode, Uri};
 
 use crate::{
     Error,
     file_info::FileInfo,
     maybe_async::{Client, Response},
+    utils::file,
 };
 
 /// Information about a URL fetched with a HEAD request.
@@ -56,18 +55,21 @@ impl Head {
         result.remote_file_info = Some(FileInfo::from_response(status, headers, 0));
 
         // Get the filename from the server.
-        result.filename = crate::headers::parse_content_disposition(headers)
-            .map(Cow::<str>::into_owned)
-            .or_else(|| {
-                let url_filename = uri.path().split('/').next_back().unwrap();
-                if url_filename.is_empty() {
-                    None
-                } else {
-                    Some(url_filename.to_owned())
-                }
-            });
+        result.filename = Self::remote_filename(headers, uri);
 
         Ok(result)
+    }
+
+    /// Work out the name of the remote file.
+    fn remote_filename(headers: &HeaderMap, uri: &Uri) -> Option<String> {
+        // Get the filename from the server.
+        crate::headers::parse_content_disposition(headers).or_else(|| {
+            let url_filename = uri.path().split('/').next_back().unwrap();
+            urlencoding::decode(url_filename)
+                .ok()
+                .and_then(|f| file::sanitize_filename(&f))
+                .filter(|f| !f.is_empty())
+        })
     }
 
     /// Return the remote filename.
@@ -101,3 +103,50 @@ impl LazyHead {
 }
 
 // TODO: unit tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use http::{HeaderMap, HeaderValue};
+
+    fn make_headers(k: &'static str, v: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        if let Some(v) = v {
+            headers.append(k, HeaderValue::from_str(v).unwrap());
+        }
+        headers
+    }
+
+    #[test]
+    pub fn should_sanitize_filename() {
+        let check = |uri: &'static str,
+                     header_filename: Option<&str>,
+                     expected_filename: Option<&str>| {
+            let uri = Uri::from_static(uri);
+            let header_value = header_filename.map(|f| format!(r#"attachment; filename="{f}""#));
+            let headers = make_headers("content-disposition", header_value.as_deref());
+            let filename = Head::remote_filename(&headers, &uri);
+            assert_eq!(filename.as_deref(), expected_filename);
+        };
+
+        // Should read filename from URL if there's no content-disposition header.
+        check("http://example.com/file.txt", None, Some("file.txt"));
+
+        // Should prefer the content-disposition header, if it's there.
+        check(
+            "http://example.com/file.txt",
+            Some("preferred.txt"),
+            Some("preferred.txt"),
+        );
+
+        // Should sanitize the filename.
+        check("http://example.com/平和.txt", None, Some("平和.txt"));
+        check("http://example.com/.hidden", None, Some("hidden"));
+        check("http://example.com/..%2Fevil", None, Some("evil"));
+        check("http://example.com/c:evil", None, Some("evil"));
+        check("http://example.com/COM1", None, None);
+        check("http://example.com/%ff", None, None);
+        check("http://example.com/", None, None);
+    }
+}
