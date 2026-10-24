@@ -8,7 +8,10 @@ mod content_range;
 
 pub use content_range::*;
 
-use crate::ProgressHandle;
+use crate::file_info::FileInfo;
+
+/// A "weakness indicator" as specified by [RFC-9110 S13.1.5](https://www.rfc-editor.org/info/rfc9110/#section-13.1.5).
+const WEAK_ETAG_INDICATOR: &str = "W/";
 
 /// Retrieves a header value as a string slice.
 fn get_header_str<'a>(headers: &'a HeaderMap, name: &HeaderName) -> Option<&'a str> {
@@ -54,15 +57,29 @@ pub fn get_last_modified(headers: &HeaderMap) -> Option<&str> {
 }
 
 /// Work out the range headers to use to resume the download.
-pub fn add_resume_download_headers(headers: &mut HeaderMap, progress: &ProgressHandle) {
-    if progress.bytes > 0 {
-        let last_modified = progress.local_file_info.last_modified.as_deref();
-        let etag = progress.local_file_info.etag.as_deref();
+pub fn add_resume_download_headers(
+    headers: &mut HeaderMap,
+    local_file_info: &FileInfo,
+    local_size: u64,
+) {
+    if local_size > 0 {
+        let last_modified = local_file_info.last_modified.as_deref();
+        let etag = local_file_info.etag.as_deref();
 
-        if let Some(if_range) = etag.or(last_modified) {
+        // Pick a value to send in the "If-Range" header.  Don't use the etag if
+        // it's marked as weak (as per RFC-9110 S13.1.5).
+        let if_range = if let Some(etag) = etag
+            && !etag.starts_with(WEAK_ETAG_INDICATOR)
+        {
+            Some(etag)
+        } else {
+            last_modified
+        };
+
+        if let Some(if_range) = if_range {
             headers.insert(
                 "Range",
-                HeaderValue::from_str(&format!("bytes={}-", progress.bytes)).unwrap(),
+                HeaderValue::from_str(&format!("bytes={local_size}-")).unwrap(),
             );
             headers.insert("If-Range", HeaderValue::from_str(if_range).unwrap());
         }
@@ -115,4 +132,37 @@ mod tests {
         let filename = parse_content_disposition(&header);
         assert_eq!(filename, Some("file name.jpg".into()));
     }
+
+    #[test]
+    fn should_prefer_etag_for_if_range_header() {
+        let local_size = 10;
+        let local_file_info = FileInfo {
+            etag: Some("tag".to_string()),
+            last_modified:Some("2023-10-01T12:34:56Z".to_string()),
+            file_length: Some(100),
+        };
+
+        let mut headers = HeaderMap::new();
+        add_resume_download_headers(&mut headers, &local_file_info, local_size);
+
+        let if_range = headers.get("If-Range").unwrap();
+        assert_eq!(if_range, "tag");
+    }
+
+    #[test]
+    fn should_ignore_weak_etags_for_if_range_header() {
+        let local_size = 10;
+        let local_file_info = FileInfo {
+            etag: Some("W/tag".to_string()),
+            last_modified:Some("2023-10-01T12:34:56Z".to_string()),
+            file_length: Some(100),
+        };
+
+        let mut headers = HeaderMap::new();
+        add_resume_download_headers(&mut headers, &local_file_info, local_size);
+
+        let if_range = headers.get("If-Range").unwrap();
+        assert_eq!(if_range, "2023-10-01T12:34:56Z");
+    }
+
 }

@@ -284,7 +284,11 @@ where
     /// Send a GET request for the file.
     async fn get_file(&mut self) -> Result<C::Response, Error> {
         let mut headers = self.headers.clone();
-        headers::add_resume_download_headers(&mut headers, &self.progress);
+        headers::add_resume_download_headers(
+            &mut headers,
+            &self.progress.local_file_info,
+            self.progress.bytes,
+        );
         let uri = self.progress.uri();
         let (u, response) = self.client.request(http::Method::GET, uri, headers).await;
         if u.is_some() {
