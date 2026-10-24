@@ -129,8 +129,6 @@ impl FileInfo {
 
     /// When called on local file info, returns an error if the passed in remote file
     /// info indicates that the file has changed since we last downloaded it.
-    ///
-    ///
     pub fn verify_unchanged(&self, remote_file_info: &FileInfo) -> Result<(), Error> {
         let mut etag_verified = false;
 

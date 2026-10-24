@@ -205,8 +205,8 @@ macro_rules! config_proxy {
         /// Set the etag for this file.  If you have already downloaded part of the
         /// file and know the etag, setting this will allow the download to verify
         /// that the file has not changed on the server before resuming.  If neither
-        /// this nor the last modified time are set, then the mtime of the existing
-        /// file on disk will be used in place of the last modified time.
+        /// this nor the last modified time are set, then the time is read from
+        /// the sidecar file, if it exists.
         pub fn etag(mut self, etag: impl Into<String>) -> Self {
             self.config.etag(etag);
             self
@@ -216,8 +216,8 @@ macro_rules! config_proxy {
         /// Set the last modified time for this file.  If you have already downloaded
         /// part of the file and know the last modified time, setting this will allow
         /// the download to verify that the file has not changed on the server before
-        /// resuming.  If neither this nor the etag are set, then the mtime of the existing
-        /// file on disk will be used in place of the last modified time.
+        /// resuming.  If neither this nor the etag are set, then the time is read from
+        /// the sidecar file, if it exists.
         pub fn last_modified(mut self, last_modified: impl Into<String>) -> Self {
             self.config.last_modified(last_modified);
             self
