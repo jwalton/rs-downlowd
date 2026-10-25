@@ -131,6 +131,10 @@ pub fn sanitize_filename(filename: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use temp_dir::TempDir;
+
     use super::*;
 
     #[test]
@@ -148,5 +152,20 @@ mod tests {
         check("平和.txt", Some("平和.txt"));
         check(".hidden", Some("hidden"));
         check("COM1", None);
+    }
+
+    #[test]
+    fn should_recognize_when_file_is_renamed() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test.txt");
+        let file = open_file_for_writing(&path).unwrap();
+
+        assert!(is_same_file(&file, &path).unwrap());
+
+        // Rename the file.
+        let new_path = dir.path().join("test2.txt");
+        fs::rename(&path, new_path).unwrap();
+
+        assert!(!is_same_file(&file, &path).unwrap());
     }
 }
