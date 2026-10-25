@@ -1,5 +1,7 @@
 use std::{
-    fs::Metadata, io::{self, SeekFrom}, path::{Path, PathBuf}
+    fs::Metadata,
+    io::{self, SeekFrom},
+    path::{Path, PathBuf},
 };
 
 use tokio::{
@@ -67,6 +69,13 @@ impl maybe_async::File for TokioFile {
     }
 
     async fn sync_all(&mut self) -> Result<(), Error> {
+        // Need to `flush` before we `sync_all` here, because `sync_all` waits
+        // for in-flight operations to finish, but if the last operation fails,
+        // `sync_all` just stores that error instead of propagating it.
+        self.inner
+            .flush()
+            .await
+            .map_err(|err| self.convert_error(err, "flush"))?;
         self.inner
             .sync_all()
             .await

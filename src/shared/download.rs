@@ -279,12 +279,13 @@ where
             .save::<F>(&self.progress.destination.sidecar_file)
             .await;
 
-        // Copy data from the response to the .part file.
+        // Copy data from the response to the .part file, and then flush the file
+        // to disk.  Prefer the error from `copy_response_to_file` as it may be
+        // retryable.
         let result = self.copy_response_to_file(response).await;
-
-        // Flush the file to ensure all data is written before we return.
-        let _ = self.part_file.sync_all().await;
+        let synced = self.part_file.sync_all().await;
         result?;
+        synced?;
 
         Ok(())
     }
