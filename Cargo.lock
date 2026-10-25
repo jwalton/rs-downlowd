@@ -537,6 +537,7 @@ dependencies = [
  "indicatif",
  "rand",
  "reqwest",
+ "same-file",
  "sanitize-filename",
  "sync_executor",
  "temp-dir",

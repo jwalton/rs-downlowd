@@ -5,7 +5,8 @@
 //! used in async contexts.
 
 use std::{
-    io::{Seek, SeekFrom},
+    fs::File,
+    io::{self, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -27,47 +28,80 @@ pub fn add_extension(path: &Path, extension: &str) -> PathBuf {
     new_path
 }
 
-/// Open the destination file for writing.  If the file already exists, this will
-/// open the file for appending and return the current length of the file.
+/// Open the destination file for writing, lock it.  If the file already exists,
+/// this will open the file for appending and return the current length of the
+/// file.  If the file already exists but is renamed while we're waiting for
+/// the lock, this will create a new copy of the file.
 ///
-pub fn open_file_for_writing(part_file: &Path) -> Result<std::fs::File, Error> {
-    // Make sure the parent directory exists.
-    if let Some(parent) = part_file.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| Error::Write {
-            action: "creating directory",
-            path: parent.to_path_buf(),
-            cause: e,
-        })?;
-    }
+pub fn open_file_for_writing(part_file: &Path) -> Result<File, Error> {
+    loop {
+        // Make sure the parent directory exists.
+        if let Some(parent) = part_file.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| Error::Write {
+                action: "creating directory",
+                path: parent.to_path_buf(),
+                cause: e,
+            })?;
+        }
 
-    // Open file in write mode and then seek to the end of the file (instead
-    // of using append mode) because append mode breaks locking on windows.
-    // See https://github.com/rust-lang/rust/issues/54118.
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .open(part_file)
-        .map_err(|e| Error::Write {
-            action: "opening file for writing",
+        // Open file in write mode and then seek to the end of the file (instead
+        // of using append mode) because append mode breaks locking on windows.
+        // See https://github.com/rust-lang/rust/issues/54118.
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(part_file)
+            .map_err(|e| Error::Write {
+                action: "opening file for writing",
+                path: part_file.to_path_buf(),
+                cause: e,
+            })?;
+
+        // Get an exclusive lock to the file, to make sure no one else is writing to it.
+        file.lock().map_err(|e| Error::Write {
+            action: "locking file",
             path: part_file.to_path_buf(),
             cause: e,
         })?;
 
-    file.seek(SeekFrom::End(0)).map_err(|e| Error::Write {
-        action: "seeking to end of file",
-        path: part_file.to_path_buf(),
-        cause: e,
-    })?;
+        // Verify some other copy of `downlowd` didn't finish and rename the .part file.
+        // If they did, we'll jump back to the top here and end up creating an empty
+        // file, but the caller will deal with it.
+        if !is_same_file(&file, part_file).map_err(|e| Error::Write {
+            action: "validating file has not been renamed",
+            path: part_file.to_path_buf(),
+            cause: e,
+        })? {
+            continue;
+        }
 
-    // Get an exclusive lock to the file, to make sure no one else is writing to it.
-    file.lock().map_err(|e| Error::Write {
-        action: "locking file",
-        path: part_file.to_path_buf(),
-        cause: e,
-    })?;
+        file.seek(SeekFrom::End(0)).map_err(|e| Error::Write {
+            action: "seeking to end of file",
+            path: part_file.to_path_buf(),
+            cause: e,
+        })?;
 
-    Ok(file)
+        return Ok(file);
+    }
+}
+
+/// Returns true if `file` is the file currently at `path`.
+fn is_same_file(file: &File, path: &Path) -> io::Result<bool> {
+    let path_handle = match same_file::Handle::from_path(path) {
+        Ok(handle) => handle,
+        Err(err) => {
+            if err.kind() == io::ErrorKind::NotFound {
+                // If `path` doesn't exist, these are not the same file.
+                return Ok(false);
+            }
+            return Err(err);
+        }
+    };
+
+    let file_handle = same_file::Handle::from_file(file.try_clone()?)?;
+
+    Ok(path_handle == file_handle)
 }
 
 pub fn sanitize_filename(filename: &str) -> Option<String> {
@@ -94,7 +128,6 @@ pub fn sanitize_filename(filename: &str) -> Option<String> {
         Some(filename)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
