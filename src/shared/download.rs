@@ -152,6 +152,7 @@ where
                             // The file has changed on the server - we need to start again.
                             self.part_file.truncate().await?;
                             self.progress.bytes = 0;
+
                             // Reset the local file info. It'll get filled in again
                             // at the start of the next download attempt.
                             self.progress
@@ -264,7 +265,14 @@ where
             self.progress
                 .local_file_info
                 .verify_unchanged(&remote_file_info)?;
+        } else {
+            // Truncate the existing file so we won't append to it.
+            self.part_file.truncate().await?;
+            self.progress.bytes = 0;
         }
+
+        // Update the sidecar file wit the etag/last-modified headers, so if we
+        // die, future instances will know what we were downloading...
         self.progress.local_file_info = remote_file_info;
         self.progress
             .local_file_info
@@ -272,7 +280,7 @@ where
             .await;
 
         // Copy data from the response to the .part file.
-        let result = self.copy_response_to_file(response, append).await;
+        let result = self.copy_response_to_file(response).await;
 
         // Flush the file to ensure all data is written before we return.
         let _ = self.part_file.sync_all().await;
@@ -312,15 +320,9 @@ where
     async fn copy_response_to_file(
         &mut self,
         mut response: C::Response,
-        append: bool,
     ) -> Result<u64, Error> {
         // The number of bytes downloaded on this attempt.
         let mut bytes_downloaded = 0;
-
-        if !append {
-            self.part_file.truncate().await?;
-            self.progress.bytes = 0;
-        }
 
         // Initial call into the progress callback.
         self.progress.notify(&mut self.progress_handler)?;
