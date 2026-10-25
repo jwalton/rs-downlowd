@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use downlowd::Client;
 use temp_dir::TempDir;
-use tokio::fs;
+use tokio::{fs, io::AsyncWriteExt};
 
 use crate::integration::utils::{self, is_ci, web_server::spawn_web_server_async};
 
@@ -23,7 +23,9 @@ async fn should_be_fast() -> Result<(), Box<dyn std::error::Error>> {
         let _ = fs::remove_file(&destination).await;
         let response = reqwest::get(&url).await?;
         let bytes = response.bytes().await?;
-        tokio::fs::write(&destination, &bytes).await?;
+        let mut file = tokio::fs::File::create(&destination).await?;
+        file.write_all(&bytes).await?;
+        file.sync_all().await?;
     }
     let elapsed = start.elapsed().unwrap();
     #[allow(clippy::cast_precision_loss)]
