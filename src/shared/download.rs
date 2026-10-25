@@ -265,6 +265,10 @@ where
             self.progress
                 .local_file_info
                 .verify_unchanged(&remote_file_info)?;
+
+            // TODO: Verify the `start` returned in the Content-Range header is the
+            // same as the `self.progress.bytes`.  If it isn't, the server is misbehaving,
+            // and we should retry the download from scratch.
         } else {
             // Truncate the existing file so we won't append to it.
             self.part_file.truncate().await?;
@@ -298,8 +302,10 @@ where
             &self.progress.local_file_info,
             self.progress.bytes,
         );
-        let uri = self.progress.uri();
-        let (u, response) = self.client.request(http::Method::GET, uri, headers).await;
+        let (u, response) = self
+            .client
+            .request(http::Method::GET, &self.progress.original_uri, headers)
+            .await;
         if u.is_some() {
             self.progress.updated_uri = u;
         }
@@ -318,10 +324,7 @@ where
 
     /// Stream data from the response to a file, and call into the progress callback as we go.
     /// Returns the total number of bytes written to the file, whether or not this succeeds.
-    async fn copy_response_to_file(
-        &mut self,
-        mut response: C::Response,
-    ) -> Result<u64, Error> {
+    async fn copy_response_to_file(&mut self, mut response: C::Response) -> Result<u64, Error> {
         // The number of bytes downloaded on this attempt.
         let mut bytes_downloaded = 0;
 

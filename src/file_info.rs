@@ -11,8 +11,11 @@ const ETAG_TAG: &str = "Etag";
 /// Information we know about a file.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct FileInfo {
+    /// The total length of the file.
     pub file_length: Option<u64>,
+    /// The time at which the file was last modified.
     pub last_modified: Option<String>,
+    /// The etag for the file.
     pub etag: Option<String>,
 }
 
