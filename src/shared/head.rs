@@ -64,6 +64,7 @@ impl Head {
     fn remote_filename(headers: &HeaderMap, uri: &Uri) -> Option<String> {
         // Get the filename from the server.
         crate::headers::parse_content_disposition(headers).or_else(|| {
+            // If that fails, get the last part of the path.
             let url_filename = uri.path().split('/').next_back().unwrap();
             urlencoding::decode(url_filename)
                 .ok()
@@ -73,8 +74,8 @@ impl Head {
     }
 
     /// Return the remote filename.
-    pub fn get_remote_file_name(&self) -> &str {
-        self.filename.as_deref().unwrap_or("file")
+    pub fn remote_file_name(&self) -> Option<&str> {
+        self.filename.as_deref()
     }
 
     /// Try to get the length of the remote file.  This may return None if the

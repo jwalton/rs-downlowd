@@ -100,13 +100,16 @@ where
         headers: &HeaderMap,
         mut destination: PathBuf,
     ) -> Result<Destination, Error> {
-        // If the destination is a directory, figure out the filename for the file.
+        // If the destination is a directory, work out a filename for the file
+        // from the server.
         let is_dir = F::metadata(&destination)
             .await
             .ok()
             .is_some_and(|m| m.is_dir());
         if is_dir {
-            let filename = head.get(client, uri, headers).await.get_remote_file_name();
+            let Some(filename) = head.get(client, uri, headers).await.remote_file_name() else {
+                return Err(Error::NoFilenameSpecified);
+            };
             destination = destination.join(filename);
         }
 

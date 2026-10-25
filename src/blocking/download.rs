@@ -90,18 +90,28 @@ impl Download {
         self
     }
 
-    #[allow(clippy::missing_panics_doc)]
+    #[deprecated(since = "0.1.6", note = "use `remote_file_name` instead")]
     /// Returns the filename that downlowd will use when downloading the file.
     /// This is determined by making a HEAD request to the server, and looking
     /// at the `Content-Disposition` header, if present, or falling back to the
     /// last part of the URL path.
     pub fn get_remote_file_name(&mut self) -> &str {
+        self.remote_file_name().unwrap_or("file")
+    }
+
+    #[allow(clippy::missing_panics_doc)]
+    /// Returns the filename that downlowd will use when downloading the file.
+    /// This is determined by making a HEAD request to the server, and looking
+    /// at the `Content-Disposition` header, if present, or falling back to the
+    /// last part of the URL path.  If a suitable filename cannot be found from
+    /// either, returns `None`.
+    pub fn remote_file_name(&mut self) -> Option<&str> {
         sync_executor::block_on(
             self.head
                 .get(&self.client, &self.config.uri, &self.config.headers),
         )
         .expect("Blocking implementation should only call blocking functions")
-        .get_remote_file_name()
+        .remote_file_name()
     }
 
     #[allow(clippy::missing_panics_doc)]

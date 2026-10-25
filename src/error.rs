@@ -58,6 +58,11 @@ pub enum Error {
     #[non_exhaustive]
     FileChanged { description: &'static str },
 
+    /// No filename was specified, and the filename could not be determined
+    /// from the server.
+    #[error("No filename was specified")]
+    NoFilenameSpecified,
+
     /// The download was cancelled by the user.
     #[error("Download was cancelled")]
     Cancelled,
@@ -77,6 +82,7 @@ impl Error {
             | Error::InvalidHeader { .. }
             | Error::Write { .. }
             | Error::BadRedirect { .. }
+            | Error::NoFilenameSpecified
             | Error::Cancelled => false,
         }
     }

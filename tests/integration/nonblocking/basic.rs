@@ -16,7 +16,7 @@ async fn should_get_the_name_of_the_file() -> Result<(), Box<dyn std::error::Err
     let url = format!("{server_url}/hello.txt");
 
     let mut download = Client::new().get(&url);
-    assert_eq!(download.get_remote_file_name().await, "hello.txt");
+    assert_eq!(download.remote_file_name().await, Some("hello.txt"));
     Ok(())
 }
 
@@ -215,6 +215,34 @@ async fn should_allow_setting_all_the_settings() -> Result<(), Box<dyn std::erro
         .max_retries(Some(20))
         .etag("some-etag")
         .last_modified("2023-10-01T12:34:56Z");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn should_not_download_a_file_when_name_cannot_be_determined()
+-> Result<(), Box<dyn std::error::Error>> {
+    let url = spawn_web_server_async().await;
+    let dir = TempDir::new()?;
+    let destination = dir.path();
+
+    let client = Client::new();
+    let result = client.get(&url).destination(destination).send().await;
+    assert!(matches!(result, Err(downlowd::Error::NoFilenameSpecified)));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn should_download_to_specific_file_when_name_cannot_be_determined()
+-> Result<(), Box<dyn std::error::Error>> {
+    let url = spawn_web_server_async().await;
+    let dir = TempDir::new()?;
+    let destination = dir.path().join("index.html");
+
+    let client = Client::new();
+    let result = client.get(&url).destination(destination).send().await;
+    assert!(result.is_ok());
 
     Ok(())
 }

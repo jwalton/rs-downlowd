@@ -92,19 +92,27 @@ impl Download {
         self
     }
 
+    #[deprecated(since = "0.1.6", note = "use `remote_file_name` instead")]
     /// Returns the filename that downlowd will use when downloading the file.
     /// This is determined by making a HEAD request to the server, and looking
     /// at the `Content-Disposition` header, if present, or falling back to the
     /// last part of the URL path.
     pub async fn get_remote_file_name(&mut self) -> &str {
-        // FIXME: If someone calls this, and then changes the headers or other parameters of this call,
-        // if might change the result of the `HEAD` request, which might invalidate our LazyHead.
+        self.remote_file_name().await.unwrap_or("file")
+    }
+
+    #[allow(clippy::missing_panics_doc)]
+    /// Returns the filename that downlowd will use when downloading the file.
+    /// This is determined by making a HEAD request to the server, and looking
+    /// at the `Content-Disposition` header, if present, or falling back to the
+    /// last part of the URL path.  If a suitable filename cannot be found from
+    /// either, returns `None`.
+    pub async fn remote_file_name(&mut self) -> Option<&str> {
         self.head
             .get(&self.client, &self.config.uri, &self.config.headers)
             .await
-            .get_remote_file_name()
+            .remote_file_name()
     }
-
     /// Send the download request to the server.
     ///
     /// # Errors

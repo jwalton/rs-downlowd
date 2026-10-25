@@ -16,7 +16,7 @@ fn should_get_the_name_of_the_file() {
     let url = format!("{server_url}/hello.txt");
 
     let mut download = Client::new().get(&url);
-    assert_eq!(download.get_remote_file_name(), "hello.txt");
+    assert_eq!(download.remote_file_name(), Some("hello.txt"));
 }
 
 #[test]
